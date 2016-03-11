@@ -1,0 +1,62 @@
+<html>
+<head>
+<title>SAMP over HTTPS</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<h2>SAMP over HTTPS</h2>
+
+<p>This is a web-app containing a proxy hub (at the XML-RPC endpoint
+<a href="xmlrpc">xmlrpc</a>) and some SAMP web appclications.
+The web apps should work using either HTTP (Web profile, nothing new)
+or HTTPS (experimental TLS profile, involves bouncing all SAMP
+communications via the proxy hub).
+</p>
+<p>The web apps are:</p>
+<ul>
+<li><a href="spinger.html">Pinger</a>:
+    really really minimal SAMP web page</li>
+<li><a href="send.html">Sender</a>:
+    very simple script to send a table</li>
+<li><a href="navigator.html">Navigator</a>:
+    steers (e.g.) Aladin all-sky view using sliders</li>
+<!--
+ !   some issues with callable clients (though they work a bit).
+ !-->
+<!--
+<li><a href="sendlist.html">Link Broadcaster</a>:
+    sends links with only HTML <code>broadcaster.js</code> helper script</li>
+<li><a href="pingee.html">Pingee</a>:
+    receives a ping message and then unregisters</li>
+<li><a href="monitor.html">Client Monitor</a>:
+    monitors registered clients with their metadata and subscriptions</li>
+<li><a href="tdisplay.html">Table Viewer</a>:
+    receives a table from another client and does 2-way communications</li>
+-->
+</ul>
+
+<p>To make the HTTPS version work, you need to run a hub using a
+suitable version of the experimental TLS profile.
+Do that by running
+<pre>
+   java -jar <a href="tlshub.jar">tlshub.jar</a>
+</pre>
+</p>
+
+<p>To set up your own HTTPS-capable clients, you (more or less) just need
+to set the <code>profile</code> property of the Connector 
+appropriately, something like this:
+<pre>
+  var connector = new samp.Connector(clientName, metaData);
+
+  // This is the part that's required for use with HTTPS.
+  // You need to set the connector profile property to an instance of
+  // samp.TlsProfile, pointing to a proxy hub XML-RPC server. --&gt;
+  if (location.protocol === "https:") {
+      var proxyHub = baseUrl + "xmlrpc";
+      connector.profile = new samp.TlsProfile(proxyHub);
+  }
+</pre>
+
+</body>
+</html>

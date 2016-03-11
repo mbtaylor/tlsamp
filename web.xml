@@ -1,0 +1,22 @@
+<web-app xmlns="http://java.sun.com/xml/ns/j2ee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         version="2.4"
+         xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee
+                             http://java.sun.com/xml/ns/j2ee/web-app_2_4.xsd">
+
+    <display-name>XML-RPC bouncer</display-name>
+    <description>
+        Bounces XML-RPC mesages.
+    </description>
+
+    <servlet>
+        <servlet-name>Bouncer</servlet-name>
+        <servlet-class>org.astrogrid.samp.tls.BounceServlet</servlet-class>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>Bouncer</servlet-name>
+        <url-pattern>/xmlrpc</url-pattern>
+    </servlet-mapping>
+
+</web-app>

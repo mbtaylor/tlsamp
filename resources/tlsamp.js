@@ -16,6 +16,10 @@ var samp = (function() {
     var WEBSAMP_PREFIX = "samp.webhub.";
     var WEBSAMP_CLIENT_PREFIX = "";
 
+    var TLSAMP_PORT = 21013;
+    var TLSAMP_PATH = "/collect";
+    var TLSAMP_PROXY_PARAM = "bouncer";
+
     // Tokens representing permissible types in a SAMP object (e.g. a message)
     TYPE_STRING = "string";
     TYPE_LIST = "list";
@@ -358,11 +362,11 @@ var samp = (function() {
     // which served the javascript.  That means that sandboxing restrictions
     // will be in effect.  Much of the work done here is therefore to
     // do the client-side work required to potentially escape the sandbox.
-    // The endpoint parameter, if supplied, is the URL of the XML-RPC server.
+    // The profile parameter, if supplied, describes the XML-RPC endpoint
+    // and how to access it.
     // If absent, the default SAMP Web Profile server is used.
-    var XmlRpcClient = function(endpoint) {
-        this.endpoint = endpoint ||
-                        "http://localhost:" + WEBSAMP_PORT + WEBSAMP_PATH;
+    var XmlRpcClient = function(profile) {
+        this.profile = profile || new WebProfile()
     };
 
     // Creates an XHR facade - an object that presents an interface
@@ -541,7 +545,7 @@ var samp = (function() {
             var e;
             try {
                 xhr = XmlRpcClient.createXHR();
-                xhr.open("POST", xClient.endpoint);
+                xhr.open("POST", xClient.profile.endpoint);
                 xhr.setContentType("text/xml");
             }
             catch (e) {
@@ -591,6 +595,9 @@ var samp = (function() {
                     errHandler(event);
                 }
             };
+            if (xClient.profile.preSend) {
+                xClient.profile.preSend();
+            }
             xhr.send(req.toXml());
             return xhr;
         })(this);
@@ -630,13 +637,13 @@ var samp = (function() {
     //
     // Connection has other methods as well as the hub API ones
     // as documented below.
-    var Connection = function(regInfo) {
+    var Connection = function(regInfo, profile) {
         this.regInfo = regInfo;
         this.privateKey = regInfo["samp.private-key"];
         if (! typeof(this.privateKey) === "string") {
             throw new Error("Bad registration object");
         }
-        this.xClient = new XmlRpcClient();
+        this.xClient = new XmlRpcClient(profile);
     };
     (function() {
         var connMethods = {
@@ -1006,6 +1013,62 @@ var samp = (function() {
         return (meta && meta["samp.name"]) ? meta["samp.name"] : "[" + id + "]";
     };
 
+    // Profile implementations.
+    // A profile instance is required for those methods with a
+    // parameter named "profile".
+    // Profile instances must have the "endpoint" member,
+    // giving the XML-RPC endpoint for the XML-RPC server implementing
+    // the SAMP Web Profile.
+    // They may also have the "preSend" member, which gives a function to
+    // be invoked prior to any XML-RPC POST operation.
+
+    // WebProfile - profile implementation for the SAMP Web Profile.
+    var WebProfile = function() {
+        this.endpoint = "http://localhost:" + WEBSAMP_PORT + WEBSAMP_PATH;
+    }
+
+    // TlsProfile - profile implementation for the (currently experimental)
+    // SAMP TLS Profile.
+    // The "proxyHubUrl" parameter is both the Web SAMP endpoint
+    // (proxy hub on a remote https server) and the endpoint for
+    // the localhost hub to collect stored XML-RPC requests from
+    // (though these could in principle be different).
+    // The "localImgFunc" parameter is a function that returns an <IMG>
+    // element in the current document whose @src attribute may be modified
+    // to message the localhost hub to retrieve messages from the remote
+    // proxy hub.  If this function is not supplied, a default implementation
+    // is used that inserts a suitable image into the page DOM.
+    var TlsProfile = function(proxyHubUrl, localImgFunc) {
+        this.endpoint = proxyHubUrl;
+        this.proxyHubUrl = proxyHubUrl;
+        this.imgSrcBase = "http://localhost:" + TLSAMP_PORT + TLSAMP_PATH;
+        if (localImgFunc) {
+            this.localImgFunc = localImgFunc;
+        }
+        else {
+            var tlsImg = document.createElement("IMG");
+            tlsImg.setAttribute("alt", "TLS-SAMP Machinery");
+            tlsImg.setAttribute("src", this.imgSrcBase);
+            var body = document.getElementsByTagName("BODY")[0];
+            var tlsDiv = document.createElement("DIV");
+            tlsDiv.setAttribute("align", "right");
+            body.appendChild(tlsDiv);
+            tlsDiv.appendChild(tlsImg);
+            this.localImgFunc = function() {
+                return tlsImg;
+            }
+        }
+    }
+    TlsProfile.prototype.preSend = function() {
+        var imgNode = this.localImgFunc();
+        if (imgNode) {
+            var imgSrc = this.imgSrcBase +
+                         "?" + TLSAMP_PROXY_PARAM + "=" + this.proxyHubUrl +
+                         "&" + "time=" + new Date().getTime();
+            imgNode.setAttribute("src", imgSrc);
+        }
+    }
+
     // Connector class:
     // A higher level class which can manage transparent hub
     // registration/unregistration and client tracking.
@@ -1017,11 +1080,19 @@ var samp = (function() {
     // callableClient is a callable client object for receiving callbacks
     // (if absent, the client is not callable).
     // subs is a subscriptions map (if absent, no subscriptions are declared)
+    //
+    // By default, the connector is ready for use with the SAMP Web Profile.
+    // To use it with the TLS profile, set its "profile" member to a suitable
+    // TlsProfile instance, e.g.:
+    //    Connector connector = Connector("aWebApp")
+    //    var proxyHubUrl = location.protocol + "//" + location.host + fooPath;
+    //    connector.profile = new TlsProfile(proxyHubUrl)
     var Connector = function(name, meta, callableClient, subs) {
         this.name = name;
         this.meta = meta;
         this.callableClient = callableClient;
         this.subs = subs;
+        this.profile = WebProfile();
         this.regTextNodes = [];
         this.whenRegs = [];
         this.whenUnregs = [];
@@ -1095,7 +1166,7 @@ var samp = (function() {
             connector.setConnection(conn);
             setRegText(connector, conn ? "Yes" : "No");
         };
-        register(this.name, regSuccessHandler, regErrHandler);
+        register(this.name, regSuccessHandler, regErrHandler, this.profile);
     };
     Connector.prototype.unregister = function() {
         if (this.connection) {
@@ -1178,13 +1249,16 @@ var samp = (function() {
         };
         var regFailureHandler = function(e) {
             connector.setConnection(undefined);
-            regErrorHandler(e);
+            if (regErrorHandler) {
+                regErrorHandler(e);
+            }
         };
         var pingResultHandler = function(result) {
             connHandler(connector.connection);
         };
         var pingErrorHandler = function(err) {
-            register(this.name, regSuccessHandler, regFailureHandler);
+            register(this.name, regSuccessHandler, regFailureHandler,
+                     connector.profile);
         };
         if (this.connection) {
             // Use getRegisteredClients as the most lightweight check
@@ -1195,7 +1269,8 @@ var samp = (function() {
                  getRegisteredClients([], pingResultHandler, pingErrorHandler);
         }
         else {
-            register(this.name, regSuccessHandler, regFailureHandler);
+            register(this.name, regSuccessHandler, regFailureHandler,
+                     connector.profile);
         }
     };
 
@@ -1206,11 +1281,14 @@ var samp = (function() {
     // running, false if not.
     // Returns the interval timer (can be passed to clearInterval()).
     Connector.prototype.onHubAvailability = function(availHandler, millis) {
-        samp.ping(availHandler);
+        var profile = connector.profile;
+        samp.ping(availHandler, profile);
 
         // Could use the W3C Page Visibility API to avoid making these
         // checks when the page is not visible.
-        return setInterval(function() {samp.ping(availHandler);}, millis);
+        return setInterval(function() {
+           samp.ping(availHandler, profile);
+        }, millis);
     };
 
     // Determines whether a given subscriptions map indicates subscription
@@ -1249,8 +1327,8 @@ var samp = (function() {
     // with the connection as an argument, on failure the supplied
     // errorHandler is called with an argument that may be an Error
     // or an XmlRpc.Fault.
-    var register = function(appName, connectionHandler, errorHandler) {
-        var xClient = new XmlRpcClient();
+    var register = function(appName, connectionHandler, errorHandler, profile) {
+        var xClient = new XmlRpcClient(profile);
         var regRequest = new XmlRpcRequest(WEBSAMP_PREFIX + "register");
         var securityInfo = {"samp.name": appName};
         regRequest.addParam(securityInfo);
@@ -1259,7 +1337,7 @@ var samp = (function() {
             var conn;
             var e;
             try {
-                conn = new Connection(result);
+                conn = new Connection(result, profile);
             }
             catch (e) {
                 errorHandler(e);
@@ -1274,8 +1352,8 @@ var samp = (function() {
     // registered to do this.
     // The supplied pingHandler function is called with a boolean argument:
     // true if a (web profile) hub is running, false if not.
-    var ping = function(pingHandler) {
-        var xClient = new XmlRpcClient();
+    var ping = function(pingHandler, profile) {
+        var xClient = new XmlRpcClient(profile);
         var pingRequest = new XmlRpcRequest(WEBSAMP_PREFIX + "ping");
         var resultHandler = function(result) {
             pingHandler(true);
@@ -1298,6 +1376,8 @@ var samp = (function() {
     jss.register = register;
     jss.ping = ping;
     jss.isSubscribed = isSubscribed;
+    jss.WebProfile = WebProfile;
+    jss.TlsProfile = TlsProfile;
     jss.Connector = Connector;
     jss.CallableClient = CallableClient;
     jss.ClientTracker = ClientTracker;

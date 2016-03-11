@@ -1,0 +1,57 @@
+<html>
+<head>
+<title>Navigator</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+  <script src="tlsamp.js"></script>
+  <script>
+
+    // Set up hub registration/unregistration.
+    var baseUrl = location.href.replace(/[^/]*$/,"");
+    var meta = {
+        "samp.name": "SkyNavigator",
+        "samp.description": "Simple sky position controller",
+        "samp.icon.url": baseUrl + "slice2.png"
+    };
+    var connector = new samp.Connector("SkyNavigator", meta);
+    if (location.protocol === "https:") {
+        var proxyHub = baseUrl + "xmlrpc";
+        var tlsImgFunc = function() {
+            return document.getElementById("nav-samp-img");
+        }
+        connector.profile = new samp.TlsProfile(proxyHub, tlsImgFunc);
+    }
+    onload = function() {
+        document.getElementById("regPanel").
+                 appendChild(connector.createRegButtons());
+    };
+    onunload = function() {
+        connector.unregister();
+    };
+
+    // Action to send messages when sliders change value.
+    var posChange = function() {
+        var ra = document.getElementById("RA").value;
+        var dec = document.getElementById("Dec").value;
+        document.getElementById("pos").innerHTML = ra + ", " + dec;
+        var connection = connector.connection;
+        if (connection) {
+            var message = new samp.Message("coord.pointAt.sky",
+                                           {"ra": ra, "dec": dec});
+            connection.notifyAll([message]);
+        }
+    };
+  </script>
+  <p>When registered and the sliders are moved, they send appropriate
+  <code>coord.pointAt.sky</code> messages.  If Aladin is running in
+  all-sky mode, this will change the view position accordingly.
+  </p>
+
+  <div id="regPanel"></div>
+  <div>RA:  <input id="RA"  type="range" onchange="posChange()" value="180" min="0" max="360" step="0.25" size="70%" /></div>
+  <div>Dec: <input id="Dec" type="range" onchange="posChange()" value="0" min="-90" max="90" step="0.25" size="70%" /></div>
+  <div>Pos: <span id="pos"></span></div>
+  <div><img id="nav-samp-img" alt="TLSAMP machinery" /></div>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<html>
+<head>
+<title>SPinger</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<h2>Minimal TLS SAMP web page</h2>
+<script src="tlsamp.js"></script>
+<script>
+  var baseUrl = location.href.replace(/[^/]*$/,"");
+  var meta = {
+    "samp.name": "SPinger",
+    "samp.icon.url": baseUrl + "slice1.png"
+  };
+  var connector = new samp.Connector("spinger", meta);
+
+  // This is the part that's required for use with HTTPS.
+  // You need to set the connector profile property to an instance of
+  // samp.TlsProfile, pointing to a proxy hub XML-RPC server.
+  if (location.protocol === "https:") {
+      var proxyHub = baseUrl + "xmlrpc";
+      connector.profile = new samp.TlsProfile(proxyHub);
+  }
+
+  var pingFunc = function(connection) {
+    connection.notifyAll([new samp.Message("samp.app.ping", {})])
+  }
+</script>
+<button onclick="connector.runWithConnection(pingFunc)">Ping</button>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<html>
+<head>
+<title>Send Table</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<script src="tlsamp.js"></script>
+<script>
+  // URL of table to send.
+  var baseUrl = location.href.toString().replace(new RegExp("[^/]*$"), "");
+  var tableUrl = baseUrl + "messier.xml";
+
+  var getListNode = function() {
+      return document.getElementById("responseList");
+  }
+
+  // Broadcasts a table given a hub connection.
+  var send = function(connection) {
+      var mtype = "table.load.votable";
+      var msg = new samp.Message(mtype, {"url": tableUrl});
+      var handleResponseFunc = function(clientId, resultNode) {
+          return function(response) {
+              var status = response["samp.status"];
+              resultNode.appendChild(document.createTextNode(status));
+          };
+      };
+      var sendToClient = function(clientId, resultNode) {
+          connection.callAndWait([clientId, msg, "15"],
+                                 handleResponseFunc(clientId, resultNode));
+      };
+      var processMetadataFunc = function(clientId) {
+          return function(meta) {
+              var clientName = meta["samp.name"];
+              var dt = document.createElement("dt");
+              dt.appendChild(document.createTextNode(clientName + ":"));
+              var dd = document.createElement("dd");
+              var listNode = getListNode();
+              listNode.appendChild(dt);
+              listNode.appendChild(dd);
+              sendToClient(clientId, dd);
+          };
+      }
+      var processSubscribedClients = function(clientSubs) {
+          for (var clientId in clientSubs) {
+              connection.getMetadata([clientId], processMetadataFunc(clientId));
+          }
+      };
+      connection.getSubscribedClients([mtype], processSubscribedClients);
+  };
+
+  // Sets up connection.
+  var meta = {
+      "samp.name": "Sender",
+      "samp.description": "Sends a table",
+      "samp.icon.url": baseUrl + "slice2.png",
+      "author.name": "Mark Taylor"
+  };
+  var connector = new samp.Connector("Sender", meta);
+  if (location.protocol === "https:") {
+      var proxyHub = baseUrl + "xmlrpc";
+      connector.profile = new samp.TlsProfile(proxyHub);
+  }
+  var registered = function(isReg) {
+      document.getElementById("sendButt").disabled = ! isReg;
+  };
+  connector.onreg = function() {
+      registered(true);
+  };
+  connector.onunreg = function() {
+      registered(false);
+  };
+
+  var sendClicked = function() {
+      var listNode = getListNode();
+      while (listNode.firstChild) {
+          listNode.removeChild(listNode.firstChild);
+      }
+      connector.runWithConnection(send);
+  };
+
+  onload = function() {
+      document.getElementById("regPanel").
+               appendChild(connector.createRegButtons());
+      registered(false);
+  };
+
+  onunload = function() {
+      connector.unregister();
+  };
+</script>
+
+<p>Sends a table when the button is pressed.
+</p>
+
+<p id="regPanel" />
+
+<p><b>I have a table.</b>
+<button id="sendButt" type="button" onclick="sendClicked()"
+        >Send It!</button>
+</p>
+
+<dl id="responseList" />
+
+</body>
+</html>
