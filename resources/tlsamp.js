@@ -595,10 +595,12 @@ var samp = (function() {
                     errHandler(event);
                 }
             };
-            if (xClient.profile.preSend) {
-                xClient.profile.preSend();
-            }
-            xhr.send(req.toXml());
+            var sendXhr = (function(x,r) {
+                return function() {
+                    x.send(r.toXml());
+                };
+            })(xhr, req);
+            xClient.profile.preSend(sendXhr, errHandler);
             return xhr;
         })(this);
     };
@@ -1016,15 +1018,26 @@ var samp = (function() {
     // Profile implementations.
     // A profile instance is required for those methods with a
     // parameter named "profile".
-    // Profile instances must have the "endpoint" member,
-    // giving the XML-RPC endpoint for the XML-RPC server implementing
-    // the SAMP Web Profile.
+    //
+    // Profile instances must have the following members:
+    //
+    //    endpoint:
+    //       the XML-RPC endpoint for the XML-RPC server implementing
+    //       the SAMP Web Profile.
+    //
+    //    preSend(sendFunc, errHandler):
+    //       a function that invokes sendFunc() to dispatch an XHR request
+    //       if all is well, or errHandler(e) if there is some problem.
+    // 
     // They may also have the "preSend" member, which gives a function to
     // be invoked prior to any XML-RPC POST operation.
 
     // WebProfile - profile implementation for the SAMP Web Profile.
     var WebProfile = function() {
         this.endpoint = "http://localhost:" + WEBSAMP_PORT + WEBSAMP_PATH;
+        this.preSend = function(sendFunc, errHandler) {
+            sendFunc();
+        };
     }
 
     // TlsProfile - profile implementation for the (currently experimental)
@@ -1040,33 +1053,35 @@ var samp = (function() {
     // is used that inserts a suitable image into the page DOM.
     var TlsProfile = function(proxyHubUrl, localImgFunc) {
         this.endpoint = proxyHubUrl;
-        this.proxyHubUrl = proxyHubUrl;
-        this.imgSrcBase = "http://localhost:" + TLSAMP_PORT + TLSAMP_PATH;
-        if (localImgFunc) {
-            this.localImgFunc = localImgFunc;
-        }
-        else {
+        var imgSrcBase = "http://localhost:" + TLSAMP_PORT + TLSAMP_PATH;
+        if (! localImgFunc) {
             var tlsImg = document.createElement("IMG");
             tlsImg.setAttribute("alt", "TLS-SAMP Machinery");
-            tlsImg.setAttribute("src", this.imgSrcBase);
+            tlsImg.setAttribute("src", imgSrcBase);
             var body = document.getElementsByTagName("BODY")[0];
             var tlsDiv = document.createElement("DIV");
             tlsDiv.setAttribute("align", "right");
             body.appendChild(tlsDiv);
             tlsDiv.appendChild(tlsImg);
-            this.localImgFunc = function() {
+            localImgFunc = function() {
                 return tlsImg;
             }
         }
-    }
-    TlsProfile.prototype.preSend = function() {
-        var imgNode = this.localImgFunc();
-        if (imgNode) {
-            var imgSrc = this.imgSrcBase +
-                         "?" + TLSAMP_PROXY_PARAM + "=" + this.proxyHubUrl +
-                         "&" + "time=" + new Date().getTime();
-            imgNode.setAttribute("src", imgSrc);
-        }
+        this.preSend = function(sendFunc, errHandler) {
+            var imgNode = localImgFunc();
+            if (imgNode) {
+                imgNode.onload = sendFunc;
+                imgNode.onerror = (function(e) {
+                    return function() {
+                        e("No TLS Hub?");
+                    };
+                })(errHandler);
+                var imgSrc = imgSrcBase +
+                             "?" + TLSAMP_PROXY_PARAM + "=" + proxyHubUrl +
+                             "&" + "time=" + new Date().getTime();
+                imgNode.setAttribute("src", imgSrc);
+            }
+        };
     }
 
     // Connector class:
