@@ -38,6 +38,15 @@ import org.astrogrid.samp.xmlrpc.SampXmlRpcClient;
 import org.astrogrid.samp.xmlrpc.SampXmlRpcClientFactory;
 import org.astrogrid.samp.xmlrpc.XmlRpcKit;
 
+/**
+ * HubProfile implementation that can be plugged into the JSAMP Hub
+ * to support HTTPS-hosted web clients.
+ *
+ * <p>Highly experimental at time of writing.
+ *
+ * @author   Mark Taylor
+ * @since    14 March 2016
+ */
 public class TlsHubProfile implements HubProfile {
 
     private final int port_;
@@ -59,6 +68,15 @@ public class TlsHubProfile implements HubProfile {
     public static final String DISPENSER_PREFIX = "samp.tlsfwd.";
     private static final int TIMEOUT_SEC = 10;
 
+    /**
+     * Constructor.
+     *
+     * @param  port  localhost port number for image nudge
+     * @param   auth  client authorizer implementation
+     * @param   mrestrict  restriction for permitted outward MTypes
+     * @param   xClientFactory   factory for XmlRpcClients
+     * @param   keyGen  key generator for private keys
+     */
     public TlsHubProfile( int port, ClientAuthorizer auth,
                           MessageRestriction mrestrict,
                           SampXmlRpcClientFactory xClientFactory,
@@ -71,6 +89,9 @@ public class TlsHubProfile implements HubProfile {
         jobMap_ = new ConcurrentHashMap<URL,Jobber>();
     }
 
+    /**
+     * Constructs an instance with default properties.
+     */
     public TlsHubProfile() {
         this( TLSAMP_PORT, new HubSwingClientAuthorizer( null ),
               ListMessageRestriction.DEFAULT,
@@ -128,6 +149,12 @@ public class TlsHubProfile implements HubProfile {
         return mrestrict_;
     }
 
+    /**
+     * HTTP handler invoked by localhost web client.
+     * It returns a small image, but retrieval has side-effects,
+     * namely causing this profile to go looking for SAMP messages
+     * queued on the proxy hub.
+     */
     private class CollectHandler implements HttpServer.Handler {
         private int iseq_;
         public HttpServer.Response serveRequest( HttpServer.Request request ) {
@@ -162,11 +189,24 @@ public class TlsHubProfile implements HubProfile {
         }
     }
 
+    /**
+     * Returns a jobber to poll a given proxy hub URL.
+     *
+     * @param   url  proxy hub url
+     * @return   jobber
+     */
     private Jobber getJobber( URL url ) {
         jobMap_.putIfAbsent( url, new Jobber( TIMEOUT_SEC * 1000 ) );
         return jobMap_.get( url );
     }
 
+    /**
+     * Invoked when a request has been received to retrieve calls from
+     * a bouncer service.
+     *
+     * @param  bouncerUrl   URL of remote messge bouncer service
+     * @param  jobber   keeps track of job execution
+     */
     private void collectCalls( final URL bouncerUrl, final Jobber jobber ) {
         if ( jobber.startJob() ) {
             try {
@@ -188,6 +228,11 @@ public class TlsHubProfile implements HubProfile {
                         finally {
                             jobber.jobCompleted();
                         }
+
+                        // Recurse.  The effect of this is that we are
+                        // looking for messages all the time within
+                        // TIMEOUT_SEC seconds of the last time a
+                        // collection request was received (but not beyond).
                         collectCalls( bouncerUrl, jobber );
                     }
                 } );
@@ -198,6 +243,13 @@ public class TlsHubProfile implements HubProfile {
         }
     }
 
+    /**
+     * Pulls queued SampCall objects from a remote bouncer and
+     * submits them for processing.
+     *
+     * @param  bouncerUrl  URL of remote bouncer service
+     * @param  timeoutSec  maximum wait time in seconds
+     */
     private void doCollectCalls( URL bouncerUrl, int timeoutSec )
             throws IOException {
         final SampXmlRpcClient xClient =
@@ -237,6 +289,13 @@ public class TlsHubProfile implements HubProfile {
         }
     }
 
+    /**
+     * Handles a SampCall object and passes the response back to the
+     * remote service.
+     *
+     * @param  xClient   XML-RPC client for communicating with bouncer
+     * @param  call     call object to be processed
+     */
     private void handleCall( SampXmlRpcClient xClient, SampCall call ) {
         String callOp = call.getOperationName();
         logger_.info( "Handling bounced call " + callOp );
@@ -269,17 +328,30 @@ public class TlsHubProfile implements HubProfile {
         }
     }
 
+    /**
+     * Returns a dummy HttpServer.Request object.
+     *
+     * @return   fake request object
+     */
     private static HttpServer.Request createFakeRequest() {
         Map fakeHeaderMap = new LinkedHashMap();
         fakeHeaderMap.put( "Origin", "fake-origin" );
         return new HttpServer.Request( null, null, fakeHeaderMap, null, null );
     }
 
+    /**
+     * Makes sense of a partial URL with parameters.
+     */
     private static class ParsedUrl {
         final String path_;
         final Map<String,String> params_;
         private static final String ENC = "UTF-8";
 
+        /**
+         * Constructor.
+         *
+         * @param   localPart   local part of URL
+         */
         ParsedUrl( String localPart ) {
             int iq = localPart.indexOf( '?' ); 
             final String query;
@@ -310,6 +382,12 @@ public class TlsHubProfile implements HubProfile {
             }
         }
 
+        /**
+         * Returns the URL of the remote bouncer service, as encoded in
+         * this object.
+         *
+         * @return   remote URL for message retrieval, or null
+         */
         URL getBouncerUrl() {
             String bounceUrl = params_.get( BOUNCEURL_PARAM );
             if ( bounceUrl == null ) {
@@ -324,33 +402,67 @@ public class TlsHubProfile implements HubProfile {
             }
         }
 
+        /**
+         * Returns true if this is to be interpreted as an initialisation
+         * (no request implicit).
+         *
+         * @return  true if this is an initialisation call
+         */
         public boolean isInit() {
             return params_.size() == 0;
         }
 
+        /**
+         * Decodes text.
+         *
+         * @param   txt  input string
+         * @return   unescaped text
+         */
         private static final String urlDecode( String txt ) {
             String encoding = "UTF-8";
             try {
                 return URLDecoder.decode( txt, encoding );
             }
             catch ( UnsupportedEncodingException e ) {
-                logger_.warning( "Unsuppored encoding " + encoding + "???" );
+                logger_.warning( "Unsupported encoding " + encoding + "???" );
                 return txt;
             }
         }
     }
 
+    /**
+     * Keeps track of job submission and execution status.
+     */
     private static class Jobber {
         private final int lagMillis_;
         private long latestSubmitTime_;
         private boolean executing_;
+
+        /**
+         * Constructor.
+         *
+         * @param  lagMillis  maximum time to wait for a queued message to
+         *                    appear, in milliseconds (else give up)
+         */
         Jobber( int lagMillis ) {
             lagMillis_ = lagMillis;
             latestSubmitTime_ = Long.MIN_VALUE;
         }
+
+        /**
+         * Note that a job has been submitted.
+         */
         public synchronized void submitJob() {
             latestSubmitTime_ = System.currentTimeMillis();
         }
+
+        /**
+         * Determines whether a job should be started.
+         * If the return value is true, it's assumed that the job actually
+         * starts now, that is it's currently running.
+         * A job should be started if an equivalent one is not already running,
+         * and if it's not too long since the last job submission.
+         */
         public synchronized boolean startJob() {
             if ( executing_ ) {
                 return false;
@@ -364,6 +476,11 @@ public class TlsHubProfile implements HubProfile {
                 return false;
             }
         }
+
+        /**
+         * Notes that a job execution has stopped, that is it's no longer
+         * running.
+         */
         public synchronized void jobCompleted() {
             executing_ = false;
         }

@@ -21,6 +21,27 @@ import org.astrogrid.samp.web.WebClientProfile;
 import org.astrogrid.samp.xmlrpc.ActorHandler;
 import org.astrogrid.samp.xmlrpc.SampXmlRpcHandler;
 
+/**
+ * This class forwards XML-RPC messages from one third-party
+ * client to another.
+ * It receives messages from a "submitter" client, stores them internally,
+ * and dispensees them to a different "servicer" client on request.
+ * It also holds returns responses from the servicer back to the
+ * submitter.
+ * Both submitter and servicer must be running on the same host as each
+ * other (though normally not the same as the one on which this bouncer
+ * is running).
+ * How the submitter tells the servicer to come looking for the
+ * messages stored here is somebody else's problem.
+ *
+ * To use this class, there must be some kind of harness that plugs it into
+ * an HTTP server, allowing both  and dispenser clients to call
+ * into it.  That harness must implement the abstract {@link #getHostName}
+ * method in a suitable way.
+ *
+ * @author   Mark Taylor
+ * @since    14 Mar 2016
+ */
 public abstract class XmlRpcBouncer {
 
     private final int collectMaxWaitSec_;
@@ -33,6 +54,11 @@ public abstract class XmlRpcBouncer {
     private static final Logger logger_ =
         Logger.getLogger( XmlRpcBouncer.class.getName() );
 
+    /**
+     * Constructor.
+     *
+     * @param   rnd  random number generator, used for token generation
+     */
     public XmlRpcBouncer( Random rnd ) {
         collectMaxWaitSec_ = 10;
         resultMaxWaitSec_ = 600;
@@ -40,34 +66,70 @@ public abstract class XmlRpcBouncer {
             new ConcurrentHashMap<String,BlockingQueue<SampCall>>();
         KeyGenerator keyGen = new KeyGenerator( "samp.tlsfwd", 16, rnd );
 
-        // This one is what the SAMP client talks to.
+        // This one is what the submitter (SAMP client) talks to.
         // It looks exactly like a normal hub interface.
         receiveHandler_ = new ReceiveHandler( keyGen );
 
-        // This one is what the localhost hub tls profile talks to.
+        // This one is what the servicer (localhost hub tls profile) talks to.
         // It has the methods defined in DispenseActor.
         dispenseHandler_ = new DispenseHandler();
     }
 
+    /**
+     * Returns the XML-RPC handler that receives messages from the submitter.
+     *
+     * @return  XML-RPC handler
+     */
     public SampXmlRpcHandler getReceiveHandler() {
         return receiveHandler_;
     }
 
+    /**
+     * Returns the XML-RPC handler that dispenses messages to the servicer.
+     *
+     * @return  dispenseHandler
+     */
     public SampXmlRpcHandler getDispenseHandler() {
         return dispenseHandler_;
     }
 
+    /**
+     * Returns a call queue for a given host.
+     *
+     * @param   hostname  host identifier string
+     * @return  queue
+     */
     private BlockingQueue<SampCall> getQueue( String hostname ) {
         submittedCalls_.putIfAbsent( hostname,
                                      new LinkedBlockingQueue<SampCall>() );
         return submittedCalls_.get( hostname );
     }
 
-    public abstract String getHostName( Object reqObj );
+    /**
+     * Returns a host identifier string given a request object.
+     * This request object is the final parameter passed to the
+     * {@link org.astrogrid.samp.xmlrpc.SampXmlRpcHandler#handleCall handleCall}
+     * method; its nature depends on the XmlRpc implementation within
+     * which this bouncer is being harnessed.
+     *
+     * @param  reqInfo   information about an HTTP request
+     */
+    public abstract String getHostName( Object reqInfo );
 
+    /**
+     * Handler implementation for the receiver endpoint.
+     *
+     * <p>Currently, the XML-RPC interface for this is identical to that
+     * used by the SAMP hub in the Web Profile.
+     */
     private class ReceiveHandler implements SampXmlRpcHandler {
         private final KeyGenerator keyGen_;
 
+        /**
+         * Constructor.
+         *
+         * @param   keyGen  key generator
+         */
         ReceiveHandler( KeyGenerator keyGen ) {
             keyGen_ = keyGen;
         }
@@ -79,6 +141,8 @@ public abstract class XmlRpcBouncer {
         public Object handleCall( final String methodName, List allParams,
                                   Object reqInfo )
                 throws InterruptedException, SampException {
+
+            // Construct a SampCall object corresponding to this submission.
             String hostname = getHostName( reqInfo );
             if ( hostname == null ) {
                 throw new SampException( "Can't determine hostname" );
@@ -86,48 +150,57 @@ public abstract class XmlRpcBouncer {
             List params = new ArrayList( allParams );
             String callTag = keyGen_.next();
             SampCall call = new SampCall( methodName, params, callTag );
+
+            // Enqueue it on a queue specific to the host from which it is
+            // being submitted.  It must be retrieved from the same host.
             BlockingQueue<SampCall> queue = getQueue( hostname );
             if ( queue.offer( call ) ) {
                 logger_.info( "Submitted call " + methodName );
-
-                // Wait for call to be collected by localhost hub;
-                // fail if timeout. 
-                if ( waitForEntry( call, COLLECTED_KEY,
-                                   collectMaxWaitSec_ * 1000 ) == null ) {
-                    queue.remove( call );
-                    throw new SampException( "No hub (bouncer timeout "
-                                           + collectMaxWaitSec_ + "sec)" );
-                }
-
-                // Wait for result from localhost hub; fail if timeout.
-                Object resultObj =
-                    waitForEntry( call, RESULT_KEY, resultMaxWaitSec_ * 1000 );
-                if ( resultObj == null ) {
-                    throw new SampException( "No hub response"
-                                           + " (bouncer timeout "
-                                           + resultMaxWaitSec_ + "sec)" );
-                }
-
-                // Return result value or error.
-                SampResult result = SampResult.asResult( (Map) resultObj );
-                Object value = result.getValue();
-                if ( value != null ) {
-                    return value;
-                }
-                else {
-                    throw new SampException( result.getError() );
-                }
             }
             else {
                 throw new SampException( "Too many calls queued"
                                        + " (" + queue.size() + ")" );
             }
+
+            // Wait for call to be collected by servicer; fail if timeout. 
+            if ( waitForEntry( call, COLLECTED_KEY,
+                               collectMaxWaitSec_ * 1000 ) == null ) {
+                queue.remove( call );
+                throw new SampException( "No hub (bouncer timeout "
+                                       + collectMaxWaitSec_ + "sec)" );
+            }
+
+            // Wait for result from servicer; fail if timeout.
+            Object resultObj =
+                waitForEntry( call, RESULT_KEY, resultMaxWaitSec_ * 1000 );
+            if ( resultObj == null ) {
+                throw new SampException( "No hub response"
+                                       + " (bouncer timeout "
+                                       + resultMaxWaitSec_ + "sec)" );
+            }
+
+            // Return result value or error.
+            SampResult result = SampResult.asResult( (Map) resultObj );
+            Object value = result.getValue();
+            if ( value != null ) {
+                return value;
+            }
+            else {
+                throw new SampException( result.getError() );
+            }
         }
     }
 
     /**
+     * Wait until an entry with a given key has appeared in a map.
      * The map must be managed such that map.notifyAll() is called when
      * the relevant entry may have been updated.
+     *
+     * @param  map   map
+     * @param  key   key to look out for
+     * @param  timeoutMillis  maximum wait time in milliseconds
+     * @return   value corresponding to <code>key</code>,
+     *           or null in case of timeout
      */
     private static Object waitForEntry( Map map, String key,
                                         long timeoutMillis )
@@ -148,15 +221,25 @@ public abstract class XmlRpcBouncer {
         }
     }
 
-    // API:
-    //    void ping()
-    //    List<SampCall> pullCalls(String timeout)
-    //    void acceptResult(String callTag, SampResult result)
-    //
+    /**
+     * Handler implementation for the dispenser endpoint.
+     *
+     * This has three methods:
+     * <pre>
+     *    void ping()
+     *    List<SampCall> pullCalls(String timeoutSec)
+     *    void acceptResult(String callTag, SampResult result)
+     * </pre>
+     * These method names are prefixed with the string
+     * {@link TlsHubProfile#DISPENSER_PREFIX}.
+     */
     private class DispenseHandler implements SampXmlRpcHandler {
         private final Map<String,SampCall> dispensedCalls_;
         private static final String PREFIX = TlsHubProfile.DISPENSER_PREFIX;
 
+        /**
+         * Constructor.
+         */
         DispenseHandler() {
             dispensedCalls_ = new ConcurrentHashMap<String,SampCall>();
         }
@@ -167,6 +250,8 @@ public abstract class XmlRpcBouncer {
 
         public Object handleCall( String fqName, List params, Object reqInfo )
                 throws Exception {
+
+            // Get unprefixed method name.
             String methodName;
             if ( fqName.startsWith( PREFIX ) ) {
                 methodName = fqName.substring( PREFIX.length() );
@@ -175,9 +260,14 @@ public abstract class XmlRpcBouncer {
                 throw new IllegalArgumentException( "No I can't" );
             }
             final Object retval;
+
+            // Handle ping method.
+            // No-op, just complete call.
             if ( "ping".equals( methodName ) ) {
                 retval = null;
             }
+
+            // Handler pullCalls method
             else if ( "pullCalls".equals( methodName ) ) {
                 String hostname = getHostName( reqInfo );
                 if ( hostname == null ) {
@@ -191,6 +281,8 @@ public abstract class XmlRpcBouncer {
                 String timeout = (String) params.get( 0 );
                 retval = pullCalls( hostname, timeout );
             }
+
+            // Handler acceptResult method.
             else if ( "acceptResult".equals( methodName ) ) {
                 if ( params.size() != 2 ||
                      ! ( params.get( 0 ) instanceof String ) ||
@@ -206,14 +298,28 @@ public abstract class XmlRpcBouncer {
             else {
                 throw new SampException( "Uknown dispenser method: " + fqName );
             }
+
+            // Make sure that a SAMP-friendly return value is returned.
             return retval == null ? "" : retval;
         }
 
+        /**
+         * Acquires a list of any calls that have been submitted by the
+         * submitter.  It blocks for up to a given number of seconds
+         * until at least one is available.
+         *
+         * @param  hostname   hostname of submitter (queue key)
+         * @param  timeoutSec  number of seconds to block for, as SAMP integer
+         * @return   list of calls; not null, but may be empty if no
+         *           messages show up by timeout expiry
+         */
         public List<SampCall> pullCalls( String hostname, String timeoutSec )
                 throws InterruptedException {
             int nSec = SampUtils.decodeInt( timeoutSec );
             List<SampCall> callList = new ArrayList<SampCall>();
             BlockingQueue<SampCall> queue = getQueue( hostname );
+
+            // Copy submitted calls from the receiving to the dispensing queue.
             SampCall call = queue.poll( nSec, TimeUnit.SECONDS );
             if ( call != null ) {
                 synchronized ( call ) {
@@ -232,6 +338,14 @@ public abstract class XmlRpcBouncer {
             return callList;
         }
 
+        /**
+         * Accepts the return value for a previously dispensed call,
+         * as generated by the servicer.
+         *
+         * @param   callTag  unique token by which the call identified itself
+         * @param   result   SAMP-friendly representation of XML-RPC call
+         *                   return value
+         */
         public void acceptResult( String callTag, Map result )
                 throws SampException, InterruptedException {
             SampCall call;
