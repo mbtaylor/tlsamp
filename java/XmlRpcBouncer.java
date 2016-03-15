@@ -174,7 +174,8 @@ public abstract class XmlRpcBouncer {
             Object resultObj =
                 waitForEntry( call, RESULT_KEY, resultMaxWaitSec_ * 1000 );
             if ( resultObj == null ) {
-                throw new SampException( "No hub response"
+                throw new SampException( "No hub response for "
+                                       + call.getOperationName()
                                        + " (bouncer timeout "
                                        + resultMaxWaitSec_ + "sec)" );
             }
@@ -293,6 +294,7 @@ public abstract class XmlRpcBouncer {
                 String callTag = (String) params.get( 0 );
                 Map result = (Map) params.get( 1 );
                 acceptResult( callTag, result );
+                logger_.info( "Accepted result for " + callTag );
                 retval = null;
             }
             else {
@@ -316,25 +318,36 @@ public abstract class XmlRpcBouncer {
         public List<SampCall> pullCalls( String hostname, String timeoutSec )
                 throws InterruptedException {
             int nSec = SampUtils.decodeInt( timeoutSec );
-            List<SampCall> callList = new ArrayList<SampCall>();
-            BlockingQueue<SampCall> queue = getQueue( hostname );
 
-            // Copy submitted calls from the receiving to the dispensing queue.
-            SampCall call = queue.poll( nSec, TimeUnit.SECONDS );
-            if ( call != null ) {
-                synchronized ( call ) {
-                    call.put( COLLECTED_KEY, "1" );
-                    call.notifyAll();
-                }
-                callList.add( call );
+            // Block until at least one call is available for dispensing,
+            // and then gather that and any others that are immediately
+            // available.  All these are removed from the queue.
+            BlockingQueue<SampCall> queue = getQueue( hostname );
+            SampCall call0 = queue.poll( nSec, TimeUnit.SECONDS );
+            List<SampCall> callList = new ArrayList<SampCall>();
+            if ( call0 != null ) {
+                callList.add( call0 );
                 for ( SampCall c = null; ( c = queue.poll() ) != null; ) {
                     callList.add( c );
                 }
             }
+
+            // Do some bookkeeping for each dispensed call.
             for ( SampCall c : callList ) {
-                dispensedCalls_.put( c.getCallTag(), call );
-                logger_.info( "Dispensed call: " + c.getOperationName() );
+
+                // Note that the call has been dispensed.
+                synchronized ( c ) {
+                    c.put( COLLECTED_KEY, "1" );
+                    c.notifyAll();
+                }
+                logger_.info( "Dispensed call: " + c.getOperationName() + " "
+                            + c.getCallTag() );
+
+                // Prepare to receive a response corresponding to it.
+                dispensedCalls_.put( c.getCallTag(), c );
             }
+
+            // Return calls to be passed to the servicer.
             return callList;
         }
 
