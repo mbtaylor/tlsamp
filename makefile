@@ -14,6 +14,7 @@ RESOURCES = \
        resources/tlsamp.js \
        resources/spinger.html \
        resources/navigator.html \
+       resources/monitor.html \
        resources/send.html \
        resources/slice1.png \
        resources/slice2.png \
