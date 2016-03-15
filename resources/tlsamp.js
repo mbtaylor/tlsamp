@@ -1038,23 +1038,32 @@ var samp = (function() {
 
     // TlsProfile - profile implementation for the (currently experimental)
     // SAMP TLS Profile.
-    // The "proxyHubUrl" parameter is both the Web SAMP endpoint
-    // (proxy hub on a remote https server) and the endpoint for
-    // the localhost hub to collect stored XML-RPC requests from
-    // (though these could in principle be different).
-    // The "localImgFunc" parameter is a function that returns an <IMG>
-    // element in the current document whose @src attribute may be modified
-    // to message the localhost hub to retrieve messages from the remote
-    // proxy hub.  If this function is not supplied, a default implementation
-    // is used that inserts a suitable image into the page DOM.
-    var TlsProfile = function(proxyHubUrl, localImgFunc) {
-        this.endpoint = proxyHubUrl;
-        var imgSrcBase = "http://localhost:" + TLSAMP_PORT + TLSAMP_PATH;
-        var imgNode;
-        if (localImgFunc) {
-            imgNode = localImgFunc();
+    // Constructor arguments:
+    //
+    //    proxyHubUrl:
+    //       a URL that is both the Web SAMP endpoint
+    //       (proxy hub on a remote https server) and the endpoint for
+    //       the localhost hub to collect stored XML-RPC requests from.
+    //       In principle these could be different, but currently this
+    //       implementation ties them to be the same.
+    //
+    //    imgNode:
+    //       a DOM <IMG> element in the current document whose @src
+    //       attribute may be modified to message the localhost hub
+    //       to retrieve messages from the remote proxy hub.
+    //       If this argument is not supplied, a suitable default IMG
+    //       element will be inserted somewhere into the page DOM.
+    var TlsProfile = function(proxyHubUrl, imgNode) {
+
+        // Get proxy hub endpoint.
+        if (!/^http/.test(proxyHubUrl)) {
+            throw new Error("proxyHubUrl argument " + proxyHubUrl + " not URL");
         }
-        else {
+        this.endpoint = proxyHubUrl;
+
+        // Get image element.
+        var imgSrcBase = "http://localhost:" + TLSAMP_PORT + TLSAMP_PATH;
+        if (imgNode === undefined) {
             imgNode = document.createElement("IMG");
             imgNode.setAttribute("alt", "TLS-SAMP Machinery");
             imgNode.setAttribute("src", imgSrcBase);
@@ -1064,6 +1073,14 @@ var samp = (function() {
             body.appendChild(tlsDiv);
             tlsDiv.appendChild(imgNode);
         }
+        else if (imgNode.tagName == 'IMG') {
+            // OK
+        }
+        else {
+            throw new Error("imgNode argument not an <IMG> element");
+        }
+
+        // Prepare actions for image node element events.
         var hubPresentQueue = [];
         var hubAbsentQueue = [];
         imgNode.onload = function() {
@@ -1078,6 +1095,10 @@ var samp = (function() {
             }
             hubPresentQueue = [];
         };
+
+        // Set up presend function that forms a wrapper for sending XHRs.
+        // It only proceeds with the send if contact with the localhost
+        // hub can be established first.
         var imgSrc = function() {
             var iseq = 0;
             return function() {

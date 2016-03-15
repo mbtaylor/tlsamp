@@ -4,6 +4,18 @@
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 </head>
 <body>
+
+  <p>When registered and the sliders are moved, they send appropriate
+  <code>coord.pointAt.sky</code> messages.  If Aladin is running in
+  all-sky mode, this will change the view position accordingly.
+  </p>
+
+  <div id="regPanel"></div>
+  <div>RA:  <input id="RA"  type="range" oninput="posChange()" value="180" min="0" max="360" step="0.25" size="70%" /></div>
+  <div>Dec: <input id="Dec" type="range" oninput="posChange()" value="0" min="-90" max="90" step="0.25" size="70%" /></div>
+  <div>Pos: <span id="pos"></span></div>
+  <div><IMG id="nav-samp-img" alt="TLSAMP machinery" /></div>
+
   <script src="tlsamp.js"></script>
   <script>
 
@@ -17,10 +29,8 @@
     var connector = new samp.Connector("SkyNavigator", meta);
     if (location.protocol === "https:") {
         var proxyHub = baseUrl + "xmlrpc";
-        var tlsImgFunc = function() {
-            return document.getElementById("nav-samp-img");
-        }
-        connector.profile = new samp.TlsProfile(proxyHub, tlsImgFunc);
+        var tlsImg = document.getElementById("nav-samp-img");
+        connector.profile = new samp.TlsProfile(proxyHub, tlsImg);
     }
     onload = function() {
         document.getElementById("regPanel").
@@ -43,15 +53,6 @@
         }
     };
   </script>
-  <p>When registered and the sliders are moved, they send appropriate
-  <code>coord.pointAt.sky</code> messages.  If Aladin is running in
-  all-sky mode, this will change the view position accordingly.
-  </p>
 
-  <div id="regPanel"></div>
-  <div>RA:  <input id="RA"  type="range" oninput="posChange()" value="180" min="0" max="360" step="0.25" size="70%" /></div>
-  <div>Dec: <input id="Dec" type="range" oninput="posChange()" value="0" min="-90" max="90" step="0.25" size="70%" /></div>
-  <div>Pos: <span id="pos"></span></div>
-  <div><img id="nav-samp-img" alt="TLSAMP machinery" /></div>
 </body>
 </html>
