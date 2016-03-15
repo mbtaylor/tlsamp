@@ -595,11 +595,9 @@ var samp = (function() {
                     errHandler(event);
                 }
             };
-            var sendXhr = (function(x,r) {
-                return function() {
-                    x.send(r.toXml());
-                };
-            })(xhr, req);
+            var sendXhr = function() {
+                xhr.send(req.toXml());
+            };
             xClient.profile.preSend(sendXhr, errHandler);
             return xhr;
         })(this);
@@ -1027,10 +1025,8 @@ var samp = (function() {
     //
     //    preSend(sendFunc, errHandler):
     //       a function that invokes sendFunc() to dispatch an XHR request
-    //       if all is well, or errHandler(e) if there is some problem.
-    // 
-    // They may also have the "preSend" member, which gives a function to
-    // be invoked prior to any XML-RPC POST operation.
+    //       if all is well, or (if present) errHandler(e) if there
+    //       is some problem.
 
     // WebProfile - profile implementation for the SAMP Web Profile.
     var WebProfile = function() {
@@ -1054,33 +1050,50 @@ var samp = (function() {
     var TlsProfile = function(proxyHubUrl, localImgFunc) {
         this.endpoint = proxyHubUrl;
         var imgSrcBase = "http://localhost:" + TLSAMP_PORT + TLSAMP_PATH;
-        if (! localImgFunc) {
-            var tlsImg = document.createElement("IMG");
-            tlsImg.setAttribute("alt", "TLS-SAMP Machinery");
-            tlsImg.setAttribute("src", imgSrcBase);
+        var imgNode;
+        if (localImgFunc) {
+            imgNode = localImgFunc();
+        }
+        else {
+            imgNode = document.createElement("IMG");
+            imgNode.setAttribute("alt", "TLS-SAMP Machinery");
+            imgNode.setAttribute("src", imgSrcBase);
             var body = document.getElementsByTagName("BODY")[0];
             var tlsDiv = document.createElement("DIV");
             tlsDiv.setAttribute("align", "right");
             body.appendChild(tlsDiv);
-            tlsDiv.appendChild(tlsImg);
-            localImgFunc = function() {
-                return tlsImg;
-            }
+            tlsDiv.appendChild(imgNode);
         }
-        this.preSend = function(sendFunc, errHandler) {
-            var imgNode = localImgFunc();
-            if (imgNode) {
-                imgNode.onload = sendFunc;
-                imgNode.onerror = (function(e) {
-                    return function() {
-                        e("No TLS Hub?");
-                    };
-                })(errHandler);
-                var imgSrc = imgSrcBase +
-                             "?" + TLSAMP_PROXY_PARAM + "=" + proxyHubUrl +
-                             "&" + "time=" + new Date().getTime();
-                imgNode.setAttribute("src", imgSrc);
+        var hubPresentQueue = [];
+        var hubAbsentQueue = [];
+        imgNode.onload = function() {
+            while (hubPresentQueue.length > 0) {
+                hubPresentQueue.shift()();
             }
+            hubAbsentQueue = [];
+        };
+        imgNode.onerror = function() {
+            while (hubAbsentQueue.length > 0) {
+                hubAbsentQueue.shift()("No TLS Hub?");
+            }
+            hubPresentQueue = [];
+        };
+        var imgSrc = function() {
+            var iseq = 0;
+            return function() {
+                iseq += 1;
+                return imgSrcBase +
+                       "?" + TLSAMP_PROXY_PARAM + "=" + proxyHubUrl +
+                       "&" + "time=" + new Date().getTime() +
+                       "&" + "iseq=" + iseq;
+            }
+        }();
+        this.preSend = function(sendFunc, errHandler) {
+            hubPresentQueue.push(sendFunc);
+            if (errHandler) {
+                hubAbsentQueue.push(errHandler);
+            }
+            imgNode.setAttribute("src", imgSrc());
         };
     }
 
