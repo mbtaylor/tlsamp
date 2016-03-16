@@ -107,14 +107,30 @@ public abstract class XmlRpcBouncer {
 
     /**
      * Returns a host identifier string given a request object.
-     * This request object is the final parameter passed to the
+     *
+     * <p>The request object is the final parameter passed to the
      * {@link org.astrogrid.samp.xmlrpc.SampXmlRpcHandler#handleCall handleCall}
      * method; its nature depends on the XmlRpc implementation within
      * which this bouncer is being harnessed.
      *
      * @param  reqInfo   information about an HTTP request
+     * @return  hostname of request originator
      */
     public abstract String getHostName( Object reqInfo );
+
+    /**
+     * Returns the value of an HTTP header, if known, given a request object.
+     *
+     * <p>The request object is the final parameter passed to the
+     * {@link org.astrogrid.samp.xmlrpc.SampXmlRpcHandler#handleCall handleCall}
+     * method; its nature depends on the XmlRpc implementation within
+     * which this bouncer is being harnessed.
+     *
+     * @param  reqInfo  information about an HTTP request
+     * @param  headerName   name of HTTP header, case insensitive
+     * @return  value for given header in request, or null if not present
+     */
+    public abstract String getHeader( Object reqInfo, String headerName );
 
     /**
      * Handler implementation for the receiver endpoint.
@@ -150,6 +166,10 @@ public abstract class XmlRpcBouncer {
             List params = new ArrayList( allParams );
             String callTag = keyGen_.next();
             SampCall call = new SampCall( methodName, params, callTag );
+            String referer = getHeader( reqInfo, "Referer" );
+            if ( referer != null ) {
+                call.put( SampCall.REFERER_KEY, referer );
+            }
 
             // Enqueue it on a queue specific to the host from which it is
             // being submitted.  It must be retrieved from the same host.

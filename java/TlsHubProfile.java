@@ -321,7 +321,7 @@ public class TlsHubProfile implements HubProfile {
         SampResult result;
         if ( wxHandler_.canHandleCall( callOp ) ) {
             List callParams = call.getParams();
-            HttpServer.Request fakeRequest = createFakeRequest();
+            HttpServer.Request fakeRequest = createFakeRequest( call );
             try {
                 Object output =
                     wxHandler_.handleCall( callOp, callParams, fakeRequest );
@@ -350,11 +350,16 @@ public class TlsHubProfile implements HubProfile {
     /**
      * Returns a dummy HttpServer.Request object.
      *
+     * @param   call  call from which request is supposed to have come
      * @return   fake request object
      */
-    private static HttpServer.Request createFakeRequest() {
+    private static HttpServer.Request createFakeRequest( SampCall call ) {
         Map fakeHeaderMap = new LinkedHashMap();
         fakeHeaderMap.put( "Origin", "fake-origin" );
+        Object referer = call.get( SampCall.REFERER_KEY );
+        if ( referer instanceof String ) {
+            fakeHeaderMap.put( "Referer", (String) referer );
+        }
         return new HttpServer.Request( null, null, fakeHeaderMap, null, null );
     }
 

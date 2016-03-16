@@ -21,10 +21,14 @@ public class SampCall extends SampMap {
     /** Key for a tag (a string) identifying a call for later matching. */
     public static final String TAG_KEY = "samp.callTag";
 
+    /** Key for the HTTP Referer header value (a string), if known. */
+    public static final String REFERER_KEY = "samp.referer";
+
     private static final String[] KNOWN_KEYS = new String[] {
         OPERATION_NAME_KEY,
         PARAMS_KEY,
         TAG_KEY,
+        REFERER_KEY,
     };
 
     /**

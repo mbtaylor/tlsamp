@@ -53,7 +53,7 @@ public class StandaloneServer {
                                                          serverDocPath ) );
         if ( proxyHubPath != null ) {
             SampXmlRpcServer xServer =
-                new InternalServer( hServer_, proxyHubPath );
+                    new InternalServer( hServer_, proxyHubPath );
             XmlRpcBouncer bouncer = new XmlRpcBouncer( new Random( 890223 ) ) {
                 public String getHostName( Object reqObj ) {
                     if ( reqObj instanceof HttpServer.Request ) {
@@ -65,6 +65,13 @@ public class StandaloneServer {
                         }
                     }
                     return null;
+                }
+                public String getHeader( Object reqObj, String hdrName ) {
+                    return reqObj instanceof HttpServer.Request
+                         ? HttpServer.getHeader( ((HttpServer.Request) reqObj)
+                                                .getHeaderMap(),
+                                                 hdrName )
+                         : null;
                 }
             };
             xServer.addHandler( bouncer.getReceiveHandler() );

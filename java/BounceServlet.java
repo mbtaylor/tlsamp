@@ -163,6 +163,11 @@ public class BounceServlet extends HttpServlet {
                     return null;
                 }
             }
+            public String getHeader( Object reqObj, String hdrName ) {
+                return reqObj instanceof HttpServletRequest
+                     ? ((HttpServletRequest) reqObj).getHeader( hdrName )
+                     : null;
+            }
         };
     }
 
