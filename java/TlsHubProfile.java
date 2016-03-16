@@ -95,7 +95,9 @@ public class TlsHubProfile implements HubProfile {
      * Constructs an instance with default properties.
      */
     public TlsHubProfile() {
-        this( TLSAMP_PORT, new HubSwingClientAuthorizer( null ),
+        this( TLSAMP_PORT,
+              new HubSwingClientAuthorizer( null,
+                                            TlsAuthHeaderControl.INSTANCE ),
               ListMessageRestriction.DEFAULT,
               XmlRpcKit.getInstance().getClientFactory(),
               new KeyGenerator( "tls:", 24, KeyGenerator.createRandom() ) );
@@ -269,7 +271,7 @@ public class TlsHubProfile implements HubProfile {
      * @param  bouncerUrl  URL of remote bouncer service
      * @param  timeoutSec  maximum wait time in seconds
      */
-    private void doCollectCalls( URL bouncerUrl, int timeoutSec )
+    private void doCollectCalls( final URL bouncerUrl, int timeoutSec )
             throws IOException {
         final SampXmlRpcClient xClient =
             xClientFactory_.createClient( bouncerUrl );
@@ -289,7 +291,7 @@ public class TlsHubProfile implements HubProfile {
                         callExecutor_.execute( new Runnable() {
                             public void run() {
                                 logger_.info( msg );
-                                handleCall( xClient, call );
+                                handleCall( xClient, call, bouncerUrl );
                             }
                         } );
                     }
@@ -314,14 +316,17 @@ public class TlsHubProfile implements HubProfile {
      *
      * @param  xClient   XML-RPC client for communicating with bouncer
      * @param  call     call object to be processed
+     * @param  bouncerUrl   URL at which the bouncer resides
      */
-    private void handleCall( SampXmlRpcClient xClient, SampCall call ) {
+    private void handleCall( SampXmlRpcClient xClient, SampCall call,
+                             URL bouncerUrl ) {
         String callOp = call.getOperationName();
         logger_.info( "Handling bounced call " + callOp );
         SampResult result;
         if ( wxHandler_.canHandleCall( callOp ) ) {
             List callParams = call.getParams();
-            HttpServer.Request fakeRequest = createFakeRequest( call );
+            HttpServer.Request fakeRequest =
+                createFakeRequest( call, bouncerUrl );
             try {
                 Object output =
                     wxHandler_.handleCall( callOp, callParams, fakeRequest );
@@ -351,14 +356,20 @@ public class TlsHubProfile implements HubProfile {
      * Returns a dummy HttpServer.Request object.
      *
      * @param   call  call from which request is supposed to have come
+     * @parma   bouncerUrl   URL of bouncer
      * @return   fake request object
      */
-    private static HttpServer.Request createFakeRequest( SampCall call ) {
+    private static HttpServer.Request createFakeRequest( SampCall call,
+                                                         URL bouncerUrl ) {
         Map fakeHeaderMap = new LinkedHashMap();
-        fakeHeaderMap.put( "Origin", "fake-origin" );
+        if ( bouncerUrl != null ) {
+            fakeHeaderMap.put( TlsAuthHeaderControl.PROXYHUB_HDR,
+                               bouncerUrl.toString() );
+        }
         Object referer = call.get( SampCall.REFERER_KEY );
         if ( referer instanceof String ) {
-            fakeHeaderMap.put( "Referer", (String) referer );
+            fakeHeaderMap.put( TlsAuthHeaderControl.REFERER_HDR,
+                               (String) referer );
         }
         return new HttpServer.Request( null, null, fakeHeaderMap, null, null );
     }

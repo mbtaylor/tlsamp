@@ -166,7 +166,8 @@ public abstract class XmlRpcBouncer {
             List params = new ArrayList( allParams );
             String callTag = keyGen_.next();
             SampCall call = new SampCall( methodName, params, callTag );
-            String referer = getHeader( reqInfo, "Referer" );
+            String referer = getHeader( reqInfo,
+                                        TlsAuthHeaderControl.REFERER_HDR );
             if ( referer != null ) {
                 call.put( SampCall.REFERER_KEY, referer );
             }
