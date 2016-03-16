@@ -6,6 +6,7 @@ import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
 import java.net.ServerSocket;
+import java.net.SocketAddress;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.util.Arrays;
@@ -29,6 +30,7 @@ import org.astrogrid.samp.hub.HubProfile;
 import org.astrogrid.samp.hub.KeyGenerator;
 import org.astrogrid.samp.hub.MessageRestriction;
 import org.astrogrid.samp.web.ClientAuthorizer;
+import org.astrogrid.samp.web.CorsHttpServer;
 import org.astrogrid.samp.web.HubSwingClientAuthorizer;
 import org.astrogrid.samp.web.ListMessageRestriction;
 import org.astrogrid.samp.web.UrlTracker;
@@ -158,6 +160,9 @@ public class TlsHubProfile implements HubProfile {
     private class CollectHandler implements HttpServer.Handler {
         private int iseq_;
         public HttpServer.Response serveRequest( HttpServer.Request request ) {
+            if ( ! isPermittedHost( request.getRemoteAddress() ) ) {
+                return CorsHttpServer.createNonLocalErrorResponse( request );
+            }
             String method = request.getMethod();
             ParsedUrl pu = new ParsedUrl( request.getUrl() );
             String path = pu.path_;
@@ -186,6 +191,20 @@ public class TlsHubProfile implements HubProfile {
             else {
                 return null;
             }
+        }
+
+        /**
+         * Indicates whether a given remote address is permitted to access
+         * this service.  Under normal circumstances this should be restricted
+         * to the local host, otherwise anyone could tell the hub to go
+         * looking for queued SAMP messages.
+         *
+         * @param  addr   client host address
+         * @return  true iff the address is permitted to access this service
+         */
+        private boolean isPermittedHost( SocketAddress addr ) {
+            return CorsHttpServer.isLocalHost( addr )
+                || CorsHttpServer.isExtraHost( addr );
         }
     }
 
