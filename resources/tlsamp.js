@@ -16,8 +16,8 @@ var samp = (function() {
     var WEBSAMP_PREFIX = "samp.webhub.";
     var WEBSAMP_CLIENT_PREFIX = "";
 
-    var TLSAMP_PORT = 21013;
-    var TLSAMP_PATH = "/collect";
+    var TLSAMP_NUDGE_PORT = 21013;
+    var TLSAMP_NUDGE_PATH = "/nudge";
     var TLSAMP_RELAY_PARAM = "relay";
 
     // Tokens representing permissible types in a SAMP object (e.g. a message)
@@ -1062,11 +1062,12 @@ var samp = (function() {
         this.endpoint = relayUrl;
 
         // Get image element.
-        var imgSrcBase = "http://localhost:" + TLSAMP_PORT + TLSAMP_PATH;
+        var nudgeSrcBase =
+            "http://localhost:" + TLSAMP_NUDGE_PORT + TLSAMP_NUDGE_PATH;
         if (imgNode === undefined) {
             imgNode = document.createElement("IMG");
             imgNode.setAttribute("alt", "TLS-SAMP Machinery");
-            imgNode.setAttribute("src", imgSrcBase);
+            imgNode.setAttribute("src", nudgeSrcBase);
             var body = document.getElementsByTagName("BODY")[0];
             var tlsDiv = document.createElement("DIV");
             tlsDiv.setAttribute("align", "right");
@@ -1099,11 +1100,11 @@ var samp = (function() {
         // Set up presend function that forms a wrapper for sending XHRs.
         // It only proceeds with the send if contact with the localhost
         // hub can be established first.
-        var imgSrc = function() {
+        var nudgeSrc = function() {
             var iseq = 0;
             return function() {
                 iseq += 1;
-                return imgSrcBase +
+                return nudgeSrcBase +
                        "?" + TLSAMP_RELAY_PARAM + "=" + relayUrl +
                        "&" + "time=" + new Date().getTime() +
                        "&" + "iseq=" + iseq;
@@ -1114,7 +1115,7 @@ var samp = (function() {
             if (errHandler) {
                 hubAbsentQueue.push(errHandler);
             }
-            imgNode.setAttribute("src", imgSrc());
+            imgNode.setAttribute("src", nudgeSrc());
         };
     }
 
@@ -1131,7 +1132,8 @@ var samp = (function() {
     // subs is a subscriptions map (if absent, no subscriptions are declared)
     //
     // By default, the connector is ready for use with the SAMP Web Profile.
-    // To use it with the TLS profile, set its "profile" member to a suitable
+    // To use it with the TLS profile, once you have an XML-RPC relay
+    // service running, set the connector's "profile" member to a suitable
     // TlsProfile instance, e.g.:
     //    Connector connector = Connector("aWebApp")
     //    var relayUrl = location.protocol + "//" + location.host + fooPath;

@@ -64,8 +64,8 @@ public class TlsHubProfile implements HubProfile {
     private static final Logger logger_ =
         Logger.getLogger( TlsHubProfile.class.getName() );
 
-    public static final int TLSAMP_PORT = 21013;
-    public static final String COLLECT_PATH = "/collect";
+    public static final int NUDGE_PORT = 21013;
+    public static final String NUDGE_PATH = "/nudge";
     public static final String RELAYURL_PARAM = "relay";
     public static final String DISPENSER_PREFIX = "samp.tlsfwd.";
     private static final int TIMEOUT_SEC = 10;
@@ -95,7 +95,7 @@ public class TlsHubProfile implements HubProfile {
      * Constructs an instance with default properties.
      */
     public TlsHubProfile() {
-        this( TLSAMP_PORT,
+        this( NUDGE_PORT,
               new HubSwingClientAuthorizer( null,
                                             TlsAuthHeaderControl.INSTANCE ),
               ListMessageRestriction.DEFAULT,
@@ -117,7 +117,7 @@ public class TlsHubProfile implements HubProfile {
         sock.setReuseAddress( true );
         sock.bind( new InetSocketAddress( port_ ) );
         hServer_ = new HttpServer( sock );
-        hServer_.addHandler( new CollectHandler() );
+        hServer_.addHandler( new NudgeHandler() );
         URL baseUrl = hServer_.getBaseUrl();  // not sure about that
         UrlTracker urlTracker = null;  // not sure about that
         wxHandler_ = new WebHubXmlRpcHandler( clientProfile, auth_, keyGen_,
@@ -159,7 +159,7 @@ public class TlsHubProfile implements HubProfile {
      * namely causing this profile to go looking for SAMP messages
      * queued on the hub relay.
      */
-    private class CollectHandler implements HttpServer.Handler {
+    private class NudgeHandler implements HttpServer.Handler {
         private int iseq_;
         public HttpServer.Response serveRequest( HttpServer.Request request ) {
             if ( ! isPermittedHost( request.getRemoteAddress() ) ) {
@@ -169,7 +169,7 @@ public class TlsHubProfile implements HubProfile {
             ParsedUrl pu = new ParsedUrl( request.getUrl() );
             String path = pu.path_;
             URL relayUrl = pu.getRelayUrl();
-            if ( COLLECT_PATH.equals( path ) ) {
+            if ( NUDGE_PATH.equals( path ) ) {
                 if ( ! "GET".equals( method ) ) {
                     return HttpServer
                           .create405Response( new String[] { "GET" } );
@@ -181,7 +181,7 @@ public class TlsHubProfile implements HubProfile {
                     return HttpServer
                           .createErrorResponse( 400, "Bad tls-samp params" );
                 }
-                logger_.info( "Collect messages from " + relayUrl );
+                logger_.info( "Nudged to collect messages from " + relayUrl );
                 Jobber jobber = getJobber( relayUrl );
                 jobber.submitJob();
                 collectCalls( relayUrl, jobber );
@@ -222,7 +222,7 @@ public class TlsHubProfile implements HubProfile {
     }
 
     /**
-     * Invoked when a request has been received to retrieve calls from
+     * Invoked when a nudge has been received to retrieve calls from
      * a hub relay service.
      *
      * @param  relayUrl   URL of remote message relay service
@@ -253,7 +253,7 @@ public class TlsHubProfile implements HubProfile {
                         // Recurse.  The effect of this is that we are
                         // looking for messages all the time within
                         // TIMEOUT_SEC seconds of the last time a
-                        // collection request was received (but not beyond).
+                        // nudge was received (but not beyond).
                         collectCalls( relayUrl, jobber );
                     }
                 } );
@@ -379,7 +379,7 @@ public class TlsHubProfile implements HubProfile {
      */
     private static class ParsedUrl {
         final String path_;
-        final Map<String,String> params_;
+        private final Map<String,String> params_;
         private static final String ENC = "UTF-8";
 
         /**
