@@ -6,11 +6,11 @@
 <body>
 <h2>SAMP over HTTPS</h2>
 
-<p>This is a web-app containing a proxy hub (at the XML-RPC endpoint
-<a href="xmlrpc">xmlrpc</a>) and some SAMP web appclications.
+<p>This is a web-app containing a hub relay (at the XML-RPC endpoint
+<a href="xmlrpc">xmlrpc</a>) and some SAMP web applications.
 The web apps should work using either HTTP (Web profile, nothing new)
 or HTTPS (experimental TLS profile, involves bouncing all SAMP
-communications via the proxy hub).
+communications via the Relay).
 </p>
 <p>The web apps are:</p>
 <ul>
@@ -51,10 +51,10 @@ appropriately, something like this:
 
   // This is the part that's required for use with HTTPS.
   // You need to set the connector profile property to an instance of
-  // samp.TlsProfile, pointing to a proxy hub XML-RPC server. --&gt;
+  // samp.TlsProfile, pointing to a hub relay XML-RPC server. --&gt;
   if (location.protocol === "https:") {
-      var proxyHub = baseUrl + "xmlrpc";
-      connector.profile = new samp.TlsProfile(proxyHub);
+      var relay = baseUrl + "xmlrpc";
+      connector.profile = new samp.TlsProfile(relay);
   }
 </pre>
 

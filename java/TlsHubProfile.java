@@ -66,7 +66,7 @@ public class TlsHubProfile implements HubProfile {
 
     public static final int TLSAMP_PORT = 21013;
     public static final String COLLECT_PATH = "/collect";
-    public static final String BOUNCEURL_PARAM = "bouncer";
+    public static final String RELAYURL_PARAM = "relay";
     public static final String DISPENSER_PREFIX = "samp.tlsfwd.";
     private static final int TIMEOUT_SEC = 10;
 
@@ -124,7 +124,7 @@ public class TlsHubProfile implements HubProfile {
                                               baseUrl, urlTracker );
         callExecutor_ = Executors.newCachedThreadPool( new ThreadFactory() {
             public Thread newThread( Runnable r ) {
-                return new Thread( r, "TLS-SAMP_bounced_call_invoker" );
+                return new Thread( r, "TLS-SAMP_relayed_call_invoker" );
             }
         } );
         collectorExecutor_ = callExecutor_;
@@ -157,7 +157,7 @@ public class TlsHubProfile implements HubProfile {
      * HTTP handler invoked by localhost web client.
      * It returns a small image, but retrieval has side-effects,
      * namely causing this profile to go looking for SAMP messages
-     * queued on the proxy hub.
+     * queued on the hub relay.
      */
     private class CollectHandler implements HttpServer.Handler {
         private int iseq_;
@@ -168,7 +168,7 @@ public class TlsHubProfile implements HubProfile {
             String method = request.getMethod();
             ParsedUrl pu = new ParsedUrl( request.getUrl() );
             String path = pu.path_;
-            URL bouncerUrl = pu.getBouncerUrl();
+            URL relayUrl = pu.getRelayUrl();
             if ( COLLECT_PATH.equals( path ) ) {
                 if ( ! "GET".equals( method ) ) {
                     return HttpServer
@@ -177,14 +177,14 @@ public class TlsHubProfile implements HubProfile {
                 else if ( pu.isInit() ) {
                     return ImageResponse.createToggleResponse( false );
                 }
-                else if ( bouncerUrl == null ) {
+                else if ( relayUrl == null ) {
                     return HttpServer
                           .createErrorResponse( 400, "Bad tls-samp params" );
                 }
-                logger_.info( "Collect messages from " + bouncerUrl );
-                Jobber jobber = getJobber( bouncerUrl );
+                logger_.info( "Collect messages from " + relayUrl );
+                Jobber jobber = getJobber( relayUrl );
                 jobber.submitJob();
-                collectCalls( bouncerUrl, jobber );
+                collectCalls( relayUrl, jobber );
                 HttpServer.Response response =
                     ImageResponse.createSpinResponse( iseq_++ );
                 response.getHeaderMap().put( "Cache-Control", "no-cache" );
@@ -211,9 +211,9 @@ public class TlsHubProfile implements HubProfile {
     }
 
     /**
-     * Returns a jobber to poll a given proxy hub URL.
+     * Returns a jobber to poll a given hub relay URL.
      *
-     * @param   url  proxy hub url
+     * @param   url  hub relay URL
      * @return   jobber
      */
     private Jobber getJobber( URL url ) {
@@ -223,22 +223,22 @@ public class TlsHubProfile implements HubProfile {
 
     /**
      * Invoked when a request has been received to retrieve calls from
-     * a bouncer service.
+     * a hub relay service.
      *
-     * @param  bouncerUrl   URL of remote messge bouncer service
+     * @param  relayUrl   URL of remote message relay service
      * @param  jobber   keeps track of job execution
      */
-    private void collectCalls( final URL bouncerUrl, final Jobber jobber ) {
+    private void collectCalls( final URL relayUrl, final Jobber jobber ) {
         if ( jobber.startJob() ) {
             try {
                 collectorExecutor_.execute( new Runnable() {
                     public void run() {
                         try {
-                            doCollectCalls( bouncerUrl, TIMEOUT_SEC );
+                            doCollectCalls( relayUrl, TIMEOUT_SEC );
                         }
                         catch ( ConnectException e ) {
                             logger_.log( Level.WARNING,
-                                         "No hub proxy at " + bouncerUrl );
+                                         "No hub relay at " + relayUrl );
                             return;
                         }
                         catch ( Throwable e ) {
@@ -254,7 +254,7 @@ public class TlsHubProfile implements HubProfile {
                         // looking for messages all the time within
                         // TIMEOUT_SEC seconds of the last time a
                         // collection request was received (but not beyond).
-                        collectCalls( bouncerUrl, jobber );
+                        collectCalls( relayUrl, jobber );
                     }
                 } );
             }
@@ -265,16 +265,16 @@ public class TlsHubProfile implements HubProfile {
     }
 
     /**
-     * Pulls queued SampCall objects from a remote bouncer and
+     * Pulls queued SampCall objects from a remote hub relay and
      * submits them for processing.
      *
-     * @param  bouncerUrl  URL of remote bouncer service
+     * @param  relayUrl  URL of remote hub relay service
      * @param  timeoutSec  maximum wait time in seconds
      */
-    private void doCollectCalls( final URL bouncerUrl, int timeoutSec )
+    private void doCollectCalls( final URL relayUrl, int timeoutSec )
             throws IOException {
         final SampXmlRpcClient xClient =
-            xClientFactory_.createClient( bouncerUrl );
+            xClientFactory_.createClient( relayUrl );
         String timeoutStr = SampUtils.encodeInt( timeoutSec );
         List<?> pullParams = Collections.singletonList( timeoutStr );
         Object pulled =
@@ -291,7 +291,7 @@ public class TlsHubProfile implements HubProfile {
                         callExecutor_.execute( new Runnable() {
                             public void run() {
                                 logger_.info( msg );
-                                handleCall( xClient, call, bouncerUrl );
+                                handleCall( xClient, call, relayUrl );
                             }
                         } );
                     }
@@ -314,19 +314,19 @@ public class TlsHubProfile implements HubProfile {
      * Handles a SampCall object and passes the response back to the
      * remote service.
      *
-     * @param  xClient   XML-RPC client for communicating with bouncer
+     * @param  xClient   XML-RPC client for communicating with relay
      * @param  call     call object to be processed
-     * @param  bouncerUrl   URL at which the bouncer resides
+     * @param  relayUrl   URL at which the hub relay resides
      */
     private void handleCall( SampXmlRpcClient xClient, SampCall call,
-                             URL bouncerUrl ) {
+                             URL relayUrl ) {
         String callOp = call.getOperationName();
-        logger_.info( "Handling bounced call " + callOp );
+        logger_.info( "Handling relayed call " + callOp );
         SampResult result;
         if ( wxHandler_.canHandleCall( callOp ) ) {
             List callParams = call.getParams();
             HttpServer.Request fakeRequest =
-                createFakeRequest( call, bouncerUrl );
+                createFakeRequest( call, relayUrl );
             try {
                 Object output =
                     wxHandler_.handleCall( callOp, callParams, fakeRequest );
@@ -356,15 +356,15 @@ public class TlsHubProfile implements HubProfile {
      * Returns a dummy HttpServer.Request object.
      *
      * @param   call  call from which request is supposed to have come
-     * @parma   bouncerUrl   URL of bouncer
+     * @parma   relayUrl   URL of hub relay
      * @return   fake request object
      */
     private static HttpServer.Request createFakeRequest( SampCall call,
-                                                         URL bouncerUrl ) {
+                                                         URL relayUrl ) {
         Map fakeHeaderMap = new LinkedHashMap();
-        if ( bouncerUrl != null ) {
-            fakeHeaderMap.put( TlsAuthHeaderControl.PROXYHUB_HDR,
-                               bouncerUrl.toString() );
+        if ( relayUrl != null ) {
+            fakeHeaderMap.put( TlsAuthHeaderControl.RELAY_HDR,
+                               relayUrl.toString() );
         }
         Object referer = call.get( SampCall.REFERER_KEY );
         if ( referer instanceof String ) {
@@ -418,21 +418,21 @@ public class TlsHubProfile implements HubProfile {
         }
 
         /**
-         * Returns the URL of the remote bouncer service, as encoded in
+         * Returns the URL of the remote hub relay service, as encoded in
          * this object.
          *
          * @return   remote URL for message retrieval, or null
          */
-        URL getBouncerUrl() {
-            String bounceUrl = params_.get( BOUNCEURL_PARAM );
-            if ( bounceUrl == null ) {
+        URL getRelayUrl() {
+            String relayUrl = params_.get( RELAYURL_PARAM );
+            if ( relayUrl == null ) {
                 return null;
             }
             try {
-                return new URL( bounceUrl );
+                return new URL( relayUrl );
             }
             catch ( MalformedURLException e ) {
-                logger_.warning( "Bouncer URL not URL (" + bounceUrl + ")" );
+                logger_.warning( "Relay location not URL (" + relayUrl + ")" );
                 return null;
             }
         }

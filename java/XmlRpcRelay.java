@@ -29,7 +29,7 @@ import org.astrogrid.samp.xmlrpc.SampXmlRpcHandler;
  * It also holds returns responses from the servicer back to the
  * submitter.
  * Both submitter and servicer must be running on the same host as each
- * other (though normally not the same as the one on which this bouncer
+ * other (though normally not the same as the one on which this relay
  * is running).
  * How the submitter tells the servicer to come looking for the
  * messages stored here is somebody else's problem.
@@ -42,24 +42,24 @@ import org.astrogrid.samp.xmlrpc.SampXmlRpcHandler;
  * @author   Mark Taylor
  * @since    14 Mar 2016
  */
-public abstract class XmlRpcBouncer {
+public abstract class XmlRpcRelay {
 
     private final int collectMaxWaitSec_;
     private final int resultMaxWaitSec_;
     private final ConcurrentMap<String,BlockingQueue<SampCall>> submittedCalls_;
     private final SampXmlRpcHandler receiveHandler_;
     private final SampXmlRpcHandler dispenseHandler_;
-    private static final String RESULT_KEY = "jsamp.bouncer.result";
-    private static final String COLLECTED_KEY = "jsamp.bouncer.collected";
+    private static final String RESULT_KEY = "jsamp.relay.result";
+    private static final String COLLECTED_KEY = "jsamp.relay.collected";
     private static final Logger logger_ =
-        Logger.getLogger( XmlRpcBouncer.class.getName() );
+        Logger.getLogger( XmlRpcRelay.class.getName() );
 
     /**
      * Constructor.
      *
      * @param   rnd  random number generator, used for token generation
      */
-    public XmlRpcBouncer( Random rnd ) {
+    public XmlRpcRelay( Random rnd ) {
         collectMaxWaitSec_ = 10;
         resultMaxWaitSec_ = 600;
         submittedCalls_ =
@@ -70,7 +70,7 @@ public abstract class XmlRpcBouncer {
         // It looks exactly like a normal hub interface.
         receiveHandler_ = new ReceiveHandler( keyGen );
 
-        // This one is what the servicer (localhost hub tls profile) talks to.
+        // This one is what the servicer (hub tls profile) talks to.
         // It has the methods defined in DispenseActor.
         dispenseHandler_ = new DispenseHandler();
     }
@@ -111,7 +111,7 @@ public abstract class XmlRpcBouncer {
      * <p>The request object is the final parameter passed to the
      * {@link org.astrogrid.samp.xmlrpc.SampXmlRpcHandler#handleCall handleCall}
      * method; its nature depends on the XmlRpc implementation within
-     * which this bouncer is being harnessed.
+     * which this relay is being harnessed.
      *
      * @param  reqInfo   information about an HTTP request
      * @return  hostname of request originator
@@ -124,7 +124,7 @@ public abstract class XmlRpcBouncer {
      * <p>The request object is the final parameter passed to the
      * {@link org.astrogrid.samp.xmlrpc.SampXmlRpcHandler#handleCall handleCall}
      * method; its nature depends on the XmlRpc implementation within
-     * which this bouncer is being harnessed.
+     * which this relay is being harnessed.
      *
      * @param  reqInfo  information about an HTTP request
      * @param  headerName   name of HTTP header, case insensitive
@@ -187,7 +187,7 @@ public abstract class XmlRpcBouncer {
             if ( waitForEntry( call, COLLECTED_KEY,
                                collectMaxWaitSec_ * 1000 ) == null ) {
                 queue.remove( call );
-                throw new SampException( "No hub (bouncer timeout "
+                throw new SampException( "No hub (relay timeout "
                                        + collectMaxWaitSec_ + "sec)" );
             }
 
@@ -197,7 +197,7 @@ public abstract class XmlRpcBouncer {
             if ( resultObj == null ) {
                 throw new SampException( "No hub response for "
                                        + call.getOperationName()
-                                       + " (bouncer timeout "
+                                       + " (relay timeout "
                                        + resultMaxWaitSec_ + "sec)" );
             }
 

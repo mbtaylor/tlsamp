@@ -18,7 +18,7 @@ var samp = (function() {
 
     var TLSAMP_PORT = 21013;
     var TLSAMP_PATH = "/collect";
-    var TLSAMP_PROXY_PARAM = "bouncer";
+    var TLSAMP_RELAY_PARAM = "relay";
 
     // Tokens representing permissible types in a SAMP object (e.g. a message)
     TYPE_STRING = "string";
@@ -1040,26 +1040,26 @@ var samp = (function() {
     // SAMP TLS Profile.
     // Constructor arguments:
     //
-    //    proxyHubUrl:
+    //    relayUrl:
     //       a URL that is both the Web SAMP endpoint
-    //       (proxy hub on a remote https server) and the endpoint for
-    //       the localhost hub to collect stored XML-RPC requests from.
+    //       (relay on a remote https server) and the endpoint for
+    //       the hub to collect stored XML-RPC requests from.
     //       In principle these could be different, but currently this
     //       implementation ties them to be the same.
     //
     //    imgNode:
     //       a DOM <IMG> element in the current document whose @src
-    //       attribute may be modified to message the localhost hub
-    //       to retrieve messages from the remote proxy hub.
+    //       attribute may be modified to nudge the hub
+    //       to retrieve messages from the remote relay.
     //       If this argument is not supplied, a suitable default IMG
     //       element will be inserted somewhere into the page DOM.
-    var TlsProfile = function(proxyHubUrl, imgNode) {
+    var TlsProfile = function(relayUrl, imgNode) {
 
-        // Get proxy hub endpoint.
-        if (!/^http/.test(proxyHubUrl)) {
-            throw new Error("proxyHubUrl argument " + proxyHubUrl + " not URL");
+        // Get hub relay endpoint.
+        if (!/^http/.test(relayUrl)) {
+            throw new Error("relayUrl argument " + relayUrl + " not URL");
         }
-        this.endpoint = proxyHubUrl;
+        this.endpoint = relayUrl;
 
         // Get image element.
         var imgSrcBase = "http://localhost:" + TLSAMP_PORT + TLSAMP_PATH;
@@ -1104,7 +1104,7 @@ var samp = (function() {
             return function() {
                 iseq += 1;
                 return imgSrcBase +
-                       "?" + TLSAMP_PROXY_PARAM + "=" + proxyHubUrl +
+                       "?" + TLSAMP_RELAY_PARAM + "=" + relayUrl +
                        "&" + "time=" + new Date().getTime() +
                        "&" + "iseq=" + iseq;
             }
@@ -1134,8 +1134,8 @@ var samp = (function() {
     // To use it with the TLS profile, set its "profile" member to a suitable
     // TlsProfile instance, e.g.:
     //    Connector connector = Connector("aWebApp")
-    //    var proxyHubUrl = location.protocol + "//" + location.host + fooPath;
-    //    connector.profile = new TlsProfile(proxyHubUrl)
+    //    var relayUrl = location.protocol + "//" + location.host + fooPath;
+    //    connector.profile = new TlsProfile(relayUrl)
     var Connector = function(name, meta, callableClient, subs) {
         this.name = name;
         this.meta = meta;

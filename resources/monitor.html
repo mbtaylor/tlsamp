@@ -75,8 +75,8 @@ var subs = cc.calculateSubscriptions();
 subs = {"*": {}};
 var connector = new samp.Connector("Monitor", meta, logCc, subs);
 if (location.protocol === "https:") {
-    var proxyHub = baseUrl + "xmlrpc";
-    connector.profile = new samp.TlsProfile(proxyHub);
+    var relay = baseUrl + "xmlrpc";
+    connector.profile = new samp.TlsProfile(relay);
 }
 connector.onunreg = function() {
     document.getElementById("clientList").innerHTML = "";

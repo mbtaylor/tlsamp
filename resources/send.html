@@ -57,8 +57,8 @@
   };
   var connector = new samp.Connector("Sender", meta);
   if (location.protocol === "https:") {
-      var proxyHub = baseUrl + "xmlrpc";
-      connector.profile = new samp.TlsProfile(proxyHub);
+      var relay = baseUrl + "xmlrpc";
+      connector.profile = new samp.TlsProfile(relay);
   }
   var registered = function(isReg) {
       document.getElementById("sendButt").disabled = ! isReg;

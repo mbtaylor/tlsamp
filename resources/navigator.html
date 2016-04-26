@@ -28,9 +28,9 @@
     };
     var connector = new samp.Connector("SkyNavigator", meta);
     if (location.protocol === "https:") {
-        var proxyHub = baseUrl + "xmlrpc";
+        var relay = baseUrl + "xmlrpc";
         var tlsImg = document.getElementById("nav-samp-img");
-        connector.profile = new samp.TlsProfile(proxyHub, tlsImg);
+        connector.profile = new samp.TlsProfile(relay, tlsImg);
     }
     onload = function() {
         document.getElementById("regPanel").

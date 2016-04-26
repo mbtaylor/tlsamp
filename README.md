@@ -14,18 +14,19 @@ The main components are:
 
    * `tlsamp.js`: javascript client library, a modification of the `samp.js` library to with the the TLS profile
    * Some simple web applications that make use of tlsamp.js to show TLS SAMP working
-   * A proxy hub implementation that sits on a remote host
+   * A relay implementation that sits on a remote host
      (likely, but not necessarily, the one hosting the web application) 
-     and fowards messages from the (localhost) client to the (localhost) hub. 
-     At some places in the code this is known as the "bouncer".
-      * A standalone harness for the proxy hub
-      * A servlet harness for the proxy hub
+     and forwards messages from the (localhost) client to the (localhost) hub. 
+     In some earlier versions of the code this was known as the "proxy hub"
+     or the "bouncer".
+      * A standalone harness for the relay
+      * A servlet harness for the relay
    * A Hub Profile that can be used with the JSAMP hub that knows how to talk to
-     the Proxy Hub, and also to sandboxed clients running on the local host
+     the Relay, and also to sandboxed clients running on the local host
 
 To make these useful/usable the makefile will build a couple of extra tthngs::
    * A .war file you can drop into a servlet container (like tomcat)
-     This contains the running proxy hub as well as some example web applications
+     This contains the running relay as well as some example web applications
    * A hub you can run on the local host that uses the TLS profile
 
 You can see some of this stuff running on my mmachine:

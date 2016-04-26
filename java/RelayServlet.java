@@ -22,44 +22,44 @@ import org.astrogrid.samp.xmlrpc.internal.XmlUtils;
 import org.w3c.dom.Document;
 
 /**
- * Servlet harness for the TLS proxy hub functionality.
+ * Servlet harness for the TLS hub relay functionality.
  *
  * @author   Mark Taylor
  * @since    11 Mar 2016
  */
-public class BounceServlet extends HttpServlet {
+public class RelayServlet extends HttpServlet {
 
     private SampXmlRpcHandler receiveHandler_;
     private SampXmlRpcHandler dispenseHandler_;
     private DocumentBuilderFactory dbFact_;
-    private static final String BOUNCER_ATTNAME =
-        XmlRpcBouncer.class.getName();
+    private static final String RELAY_ATTNAME =
+        XmlRpcRelay.class.getName();
     private static final String DBFACT_ATTNAME =
-        BounceServlet.class.getName() + ".dbfact";
+        RelayServlet.class.getName() + ".dbfact";
 
     @Override
     public void init( ServletConfig config ) throws ServletException {
         super.init( config );
         ServletContext context = config.getServletContext();
 
-        // It might be more respectable to declare the BounceContextInitializer
+        // It might be more respectable to declare the RelayContextInitializer
         // class where the servlet container will pick it up.
         // However, I'm not sure where to do that, and doing it like this
         // is at least transparent.
-        if ( context.getAttribute( BOUNCER_ATTNAME ) == null ) {
-            new BounceContextInitializer()
+        if ( context.getAttribute( RELAY_ATTNAME ) == null ) {
+            new RelayContextInitializer()
                .contextInitialized( new ServletContextEvent( context ) );
         }
 
         // Initialise persistent state for this servlet.
         Object dbfactObj = context.getAttribute( DBFACT_ATTNAME );
-        Object bouncerObj = context.getAttribute( BOUNCER_ATTNAME );
+        Object relayObj = context.getAttribute( RELAY_ATTNAME );
         if ( dbfactObj instanceof DocumentBuilderFactory &&
-             bouncerObj instanceof XmlRpcBouncer ) {
+             relayObj instanceof XmlRpcRelay ) {
             dbFact_ = (DocumentBuilderFactory) dbfactObj;
-            XmlRpcBouncer bouncer = (XmlRpcBouncer) bouncerObj;
-            receiveHandler_ = bouncer.getReceiveHandler();
-            dispenseHandler_ = bouncer.getDispenseHandler();
+            XmlRpcRelay relay = (XmlRpcRelay) relayObj;
+            receiveHandler_ = relay.getReceiveHandler();
+            dispenseHandler_ = relay.getDispenseHandler();
         }
         else {
             throw new ServletException( "Init failed" );
@@ -138,13 +138,13 @@ public class BounceServlet extends HttpServlet {
     }
 
     /**
-     * Returns an XmlRpcBouncer object suitable for use with this servlet
+     * Returns an XmlRpcRelay object suitable for use with this servlet
      * implementation.
      *
-     * @return  new bouncer
+     * @return  new relay
      */
-    private static XmlRpcBouncer createBouncer() {
-        return new XmlRpcBouncer( new Random() ) {
+    private static XmlRpcRelay createRelay() {
+        return new XmlRpcRelay( new Random() ) {
             public String getHostName( Object reqObj ) {
                 if ( reqObj instanceof HttpServletRequest ) {
 
@@ -152,7 +152,7 @@ public class BounceServlet extends HttpServlet {
                     // the XML-RPC request originated.  Pull it out from
                     // the incoming HttpServletRequest object.
                     // That sounds OK, but there may be a problem -
-                    // if the request has been through a proxy,
+                    // if the request has been through an HTTP proxy,
                     // this address might be the wrong one
                     // (see ServletRequest.getRemoteAddr javadocs).
                     // So, maybe we need to identify originating calls by
@@ -179,11 +179,11 @@ public class BounceServlet extends HttpServlet {
      * how to do it), the contextInitialized method can be called lazily
      * instead.
      */
-    private static class BounceContextInitializer
+    private static class RelayContextInitializer
             implements ServletContextListener {
         public void contextInitialized( ServletContextEvent evt ) {
             ServletContext context = evt.getServletContext();
-            context.setAttribute( BOUNCER_ATTNAME, createBouncer() );
+            context.setAttribute( RELAY_ATTNAME, createRelay() );
             context.setAttribute( DBFACT_ATTNAME,
                                   DocumentBuilderFactory.newInstance() );
         }

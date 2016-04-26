@@ -6,8 +6,8 @@ JSRC = \
        java/TlsAuthHeaderControl.java \
        java/TlsHub.java \
        java/TlsHubProfile.java \
-       java/XmlRpcBouncer.java \
-       java/BounceServlet.java \
+       java/XmlRpcRelay.java \
+       java/RelayServlet.java \
        java/StandaloneServer.java \
 
 RESOURCES = \
@@ -45,10 +45,10 @@ HTTP_DIR = /mbt/user/www/htdocs/websamp
  
 build: $(JARFILE) $(JSAMP_JAR) $(TLSHUB) $(WEBAPP).war
 
-# This runs a standalone document server and proxy hub on the local machine.
+# This runs a standalone document server and Relay on the local machine.
 # Useful for testing (you can try out TLS SAMP without a servlet container)
 # but you probably wouldn't do it like this for a real deployment.
-# Note you need correct certificates for the proxy hub
+# Note you need correct certificates for the relay
 # (though you could set it up using HTTP instead for testing,
 # no certs required).
 runserver: build
@@ -58,7 +58,7 @@ runserver: build
                 org.astrogrid.samp.tls.StandaloneServer
 
 # This runs an HTTPS-capable version of the the local host hub.
-# You still need to deploy the proxy hub a server somewhere
+# You still need to deploy the relay on a server somewhere
 # (either using the runserver target above or by deploying the .war
 # file into a servlet container).
 hub: build

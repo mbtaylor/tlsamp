@@ -16,10 +16,10 @@
 
   // This is the part that's required for use with HTTPS.
   // You need to set the connector profile property to an instance of
-  // samp.TlsProfile, pointing to a proxy hub XML-RPC server.
+  // samp.TlsProfile, pointing to a hub relay XML-RPC server.
   if (location.protocol === "https:") {
-      var proxyHub = baseUrl + "xmlrpc";
-      connector.profile = new samp.TlsProfile(proxyHub);
+      var relay = baseUrl + "xmlrpc";
+      connector.profile = new samp.TlsProfile(relay);
   }
 
   var pingFunc = function(connection) {

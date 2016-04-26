@@ -20,10 +20,10 @@ import org.astrogrid.samp.web.WebAuthHeaderControl;
  *     See <a href="https://www.w3.org/Protocols/rfc2616/rfc2616.html"
  *            >HTTP/1.1 (RFC2616)</a>, sec 14.36.
  *     </dd>
- * <dt>Proxy-Hub:</dt>
+ * <dt>Hub-Relay:</dt>
  * <dd>Dummy header introduced by the TLS Hub Profile, giving the URL
- *     of the proxy hub service from which pending calls were retrieved.
- *     It is reliable if HTTPS, since the hub profile gets information
+ *     of the relay service from which pending calls were retrieved.
+ *     It is reliable over HTTPS, since the hub profile gets information
  *     about who it's talking to directly.
  *     </dd>
  * </dl>
@@ -40,8 +40,8 @@ class TlsAuthHeaderControl implements AuthHeaderControl {
     /** Referer header. */
     public static final String REFERER_HDR = WebAuthHeaderControl.REFERER_HDR;
 
-    /** "Proxy-Hub", dummy header introduced by TLS hub profile. */
-    public static final String PROXYHUB_HDR = "Proxy-Hub";
+    /** "Hub-Relay", dummy header introduced by TLS hub profile. */
+    public static final String RELAY_HDR = "Hub-Relay";
 
     /** 
      * Private constructor prevents public instantiation of singleton class.
@@ -50,26 +50,25 @@ class TlsAuthHeaderControl implements AuthHeaderControl {
     }
 
     public String[] getDisplayedHeaders() {
-        return new String[] { REFERER_HDR, PROXYHUB_HDR };
+        return new String[] { REFERER_HDR, RELAY_HDR };
     }
 
     public Object[] getMessageLines( Map hdrMap ) {
-        String proxyHub = HttpServer.getHeader( hdrMap, PROXYHUB_HDR );
+        String relay = HttpServer.getHeader( hdrMap, RELAY_HDR );
         List<String> lines = new ArrayList<String>();
-        if ( proxyHub == null || proxyHub.trim().length() == 0 ) {
-            lines.add( "WARNING: unknown proxy hub, shouldn't happen"
-                     + " (hub bug?)" );
+        if ( relay == null || relay.trim().length() == 0 ) {
+            lines.add( "WARNING: unknown relay, shouldn't happen (hub bug?)" );
         }
         else {
             String proto;
             try {
-                proto = new URL( proxyHub ).getProtocol();
+                proto = new URL( relay ).getProtocol();
             }
             catch ( MalformedURLException e ) {
                 proto = "???";
             }
             if ( ! "https".equalsIgnoreCase( proto ) ) {
-                lines.add( "INFO: proxy hub not https"
+                lines.add( "INFO: hub relay service not https"
                          + ", identity is not guaranteed" );
             }
         }

@@ -3,10 +3,13 @@ Notes on SAMP over HTTPS.
 
 Actors:
    Web application
-   Proxy hub (Bouncer; better: Relay)
+   Relay
       Collector
       Dispenser
-   Localhost hub
+   Hub
+
+(note that in some previous versions of this package, the Relay
+was known as the Proxy Hub or Bouncer, and the Hub as the Localhost Hub).
 
 
 URL translation:
@@ -15,24 +18,24 @@ Not done.  It would be possible, but requires additional API for
 all four actors.
 
 There needs to be some mechanism for the web application to find
-a URL (in the proxy hub) providing the content of a potentially
+a URL (in the Relay) providing the content of a potentially
 inaccessible URL.  In the Web Profile, this is just prepending
 a string to the URL before using it.  That probably can work
 here too, but retrieving that URL will have to trigger acquisition
 of the data.  Something (dispenser, probably) has to adjust the
 RegInfo registry return value to provide the right samp.url-translator
-(presumably pointing to somewhere near the proxy hub).
+(presumably pointing to somewhere near the Relay).
 That's a shame, because otherwise the web application is exchanging
 exactly the same messages in the TLS profile as the Web profile.
 
-The web application, in principle, has to nudge the localhost hub
+The web application, in principle, has to nudge the hub
 when it is about to retrieve a potentially inaccessible URL.
 In practice, with the current arrangement of waiting for calls
 for a few seconds after the last nudge, this probably isn't required.
 
-When the proxy hub services a content request that it's proxying for,
+When the relay services a content request that it's proxying for,
 it has to synchronously submit a request (via long poll callback)
-to the localhost hub for the content, wait for the result, and
+to the hub for the content, wait for the result, and
 then feed it back to the web app.  This may time out if the resource
 is long/slow to download.  It could make sense to cache it,
 though if you do it this way no caching (and no cache clearing
@@ -40,7 +43,7 @@ policy) is required.  Probably better.  But note that unlike
 the XML-RPC calls and SAMP Messages, this is bulk data getting
 bounced long distances, undesirable.
 
-In case the proxy hub can determine that the target URL is actually
+In case the relay can determine that the target URL is actually
 accessible by the requesting client, the service can and should
 emit a 302(?) redirect.
 
@@ -51,9 +54,9 @@ Security:
 This is SAMP over HTTPS, not necessarily secure SAMP.
 The calls, messages and bulk data are getting transmitted off-host,
 which under Web SAMP they don't have to be.  Probably it's using
-HTTPS, which helps (though currently the localhost hub-proxy hub
+HTTPS, which helps (though currently the hub-relay
 communications are not *required* to be HTTPS).
-The localhost hub has more complicated trust arrangements:
+The Hub has more complicated trust arrangements:
 it has to trust off-host processes to some extent.
 That could be mitigated by using per-hub, per-client, or per-message
 authentication tokens, not currently in place.
@@ -62,8 +65,7 @@ authentication tokens, not currently in place.
 Message identification:
 -----------------------
 
-How do messages on the proxy hub get identified for dispatch
-to the localhost hub?
+How do messages on the Relay get identified for dispatch to the Hub?
 
 At present, the collection request incoming to the dispenser is
 examined for its originating host, and any messages for collection
@@ -77,7 +79,7 @@ well-known port.
 But there are (at least?) two problems with this scenario.
 
 First, the host determined from the collection request could be
-a proxy rather than the host on which the localhost hub runs.
+an HTTP proxy rather than the host on which the hub runs.
 javax.servlet.ServletRequest.getRemote{Addr,Host} javadocs say
 that they report the identity of the "... client or last proxy
 that sent the request".  Probably(?) this won't break the link
@@ -86,30 +88,30 @@ will presumably(?) go through the same proxy.  However, it could
 map multiple hosts to the same identifier (if they use the same
 proxy).  This is probably therefore fatal.
 
-Second, a malicious or poorly-implemented proxy hub could dispense
+Second, a malicious or poorly-implemented relay could dispense
 XML-RPC calls originating from a different web application (or
 from none at all), i.e. one which is not running on the local host.
 That could be quite damaging, because e.g. a registration request
 from a quite different (possibly malicious) client could pop up
 at just the time you're expecting one.
 
-So really, the localhost hub wants to be assured that it's picking
+So really, the hub wants to be assured that it's picking
 up a call that originates from a web application running on the
 local host.  That can in principle be done: make sure that the
 web application includes an unguessable identification token
-with the nudge message.  To defend against a malicious proxy hub,
+with the nudge message.  To defend against a malicious relay,
 this should come in two parts: token T1 to identify the localhost
-(so the proxy hub knows which one to send) and token T2 authenticate
-the message (so the localhost hub knows that the message actually
+(so the relay knows which one to send) and token T2 authenticate
+the message (so the hub knows that the message actually
 came from the web client on the localhost) - only T1 is sent
-by the localhost hub in the dispense request.
+by the hub in the dispense request.
 Bit fiddly, but doable.
 
 
 Transport:
 ----------
 
-I'm using long polls in both directions (the localhost hub is making
+I'm using long polls in both directions (the hub is making
 long polls for callbacks - some of those callbacks are carrying out
 long polls in the opposite direction).  It does seem to work, but
 it's crying out to use web sockets.  However, that would require a
@@ -122,7 +124,7 @@ should get the same treatment.  I don't know if I can face it.
 If I could: what RPC mechanism would we use?  Probably WAMP which
 generally uses JSON for serialization (wampy.js, jawampa).
 It also has a very suitable architecture, uses a router which
-could live on the proxy hub.  I'm sure it's doable, but, oof.
+could live on the relay.  I'm sure it's doable, but, oof.
 
 One problem is putting the required libraries in place.
 For JS, there are some options that are not too painful
@@ -139,7 +141,6 @@ Needs some thought.  Probably some things need to be renamed, I should
 make consistent use of different terms for different actors in the
 protocol documentation, the source code, and API names.
 
-"Relay" would be better than "bouncer"/"proxyHub".
 "Nudge" should be used consistently for the web client->hub alert
 
 
@@ -153,17 +154,17 @@ Probably nobody will understand it apart from me.
 
 Deployment actually isn't too bad: the javascript client library
 can be updated without that much difficulty to work for either
-HTTP or HTTPS.  The proxy hub can be supplied as a war file and
+HTTP or HTTPS.  The relay can be supplied as a war file and
 dropped into a servlet container.  The hub profile can be plugged
 into an existing hub.
 
-Multiple implementations: we should have an AstroPy localhost hub
+Multiple implementations: we should have an AstroPy hub
 profile implementation at least - who's going to do that?
 I asked astropy-dev, and apparently Tom Robitaille is primary
 maintainer for astropy.vo.samp, so would be the first point of
 contact.
 I could write a java client implementation I suppose.
-There should be an independent proxy hub implementation - node.js?
+There should be an independent Relay implementation - node.js?
 I wonder who will do that.
 
 Note however that in most cases, Web SAMP just does something
@@ -191,7 +192,7 @@ Conclusions:
 Having written this: most of these issues would go away if I bit
 the bullet and did it using web sockets, probably WAMP.
 From a cursory look, the architecture looks like it fits right
-in to what we need (WAMP message broker sits on the proxy hub).
+in to what we need (WAMP message broker sits on the Relay).
 
 So, it could be back to the drawing board.  I've probably burned
 about 10 days getting it working with XML-RPC.  Hmm.
