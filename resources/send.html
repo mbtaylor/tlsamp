@@ -75,7 +75,9 @@
       while (listNode.firstChild) {
           listNode.removeChild(listNode.firstChild);
       }
-      connector.runWithConnection(send);
+      if (connector.connection) {
+          send(connector.connection);
+      }
   };
 
   onload = function() {
