@@ -12,8 +12,10 @@ For some background see the following presentations:
 
 The main components are:
 
-   * `tlsamp.js`: javascript client library, a modification of the `samp.js` library to with the the TLS profile
-   * Some simple web applications that make use of tlsamp.js to show TLS SAMP working
+   * `tlsamp.js`: javascript client library,
+     a modification of the `samp.js` library to with the the TLS profile
+   * Some simple web applications that make use of tlsamp.js
+     to show TLS SAMP working
    * A relay implementation that sits on a remote host
      (likely, but not necessarily, the one hosting the web application) 
      and forwards messages from the (localhost) client to the (localhost) hub. 
@@ -21,15 +23,15 @@ The main components are:
      or the "bouncer".
       * A standalone harness for the relay
       * A servlet harness for the relay
-   * A Hub Profile that can be used with the JSAMP hub that knows how to talk to
-     the Relay, and also to sandboxed clients running on the local host
+   * A Hub Profile that can be used with the JSAMP hub that knows how to talk
+     to the Relay, and also to sandboxed clients running on the local host
 
-To make these useful/usable the makefile will build a couple of extra tthngs::
+To make these useful/usable the makefile will build a couple of extra things:
    * A .war file you can drop into a servlet container (like tomcat)
      This contains the running relay as well as some example web applications
    * A hub you can run on the local host that uses the TLS profile
 
-You can see some of this stuff running on my mmachine:
+You can see some of this stuff running on my machine:
    [http://andromeda.star.bristol.ac.uk/websamp/](http://andromeda.star.bristol.ac.uk/websamp/)
 
 All the code here, and the prototype APIs/protocols that it represents,
