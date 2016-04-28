@@ -19,6 +19,15 @@ import org.astrogrid.samp.web.WebAuthHeaderControl;
  * <dd>Connection URL, present at whim of browser.
  *     See <a href="https://www.w3.org/Protocols/rfc2616/rfc2616.html"
  *            >HTTP/1.1 (RFC2616)</a>, sec 14.36.
+ *     It's not reliable from the hub's point of view since:
+ *     <ul>
+ *     <li>the browser might not have inserted it when the web application
+ *         connected to the relay</li>
+ *     <li>the connection to the relay might have come from something that
+ *         is not a web application at all, hence could write its own
+ *         Referer value</li>
+ *     <li>the relay might be lying about it</li>
+ *     </ul>
  *     </dd>
  * <dt>Hub-Relay:</dt>
  * <dd>Dummy header introduced by the TLS Hub Profile, giving the URL
