@@ -9,6 +9,7 @@ For some background see the following presentations:
 
    * [Sydney 2015](http://wiki.ivoa.net/internal/IVOA/InteropOct2015Applications/samp-https.pdf)
    * [Edinburgh 2016](https://www.asterics2020.eu/dokuwiki/lib/exe/fetch.php?media=open:wp4:tlsamp.pdf)
+   * [Cape Town 2016](http://wiki.ivoa.net/internal/IVOA/InterOpMay2016-GWS/tlsamp.pdf)
 
 The main components are:
 
