@@ -47,6 +47,11 @@ In case the relay can determine that the target URL is actually
 accessible by the requesting client, the service can and should
 emit a 302(?) redirect.
 
+Note however that nearly all URLs will need to be proxied if their
+content is required by the web application.  It's not just file:///
+and http://localhost, it's any http:// URL as well.
+Only https URLs will work directly.
+
 
 Security:
 ---------
