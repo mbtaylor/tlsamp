@@ -13,7 +13,7 @@ import org.astrogrid.samp.SampMap;
 public class SampCall extends SampMap {
 
     /** Key for the callback operation name (a string). */
-    public static final String OPERATION_NAME_KEY = "samp.operationName";
+    public static final String OPERATION_NAME_KEY = "samp.methodName";
 
     /** Key for the callback parameters (a list). */
     public static final String PARAMS_KEY = "samp.params";
