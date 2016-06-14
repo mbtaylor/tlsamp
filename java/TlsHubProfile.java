@@ -343,7 +343,7 @@ public class TlsHubProfile implements HubProfile {
         String tag = call.getCallTag();
         List resultParams = Arrays.asList( new Object[] { tag, result } );
         try {
-            xClient.callAndWait( DISPENSER_PREFIX + "acceptResult",
+            xClient.callAndWait( DISPENSER_PREFIX + "receiveResult",
                                  resultParams );
         }
         catch ( IOException e ) {

@@ -250,7 +250,7 @@ public abstract class XmlRpcRelay {
      * <pre>
      *    void ping()
      *    List<SampCall> pullCalls(String timeoutSec)
-     *    void acceptResult(String callTag, SampResult result)
+     *    void receiveResult(String callTag, SampResult result)
      * </pre>
      * These method names are prefixed with the string
      * {@link TlsHubProfile#DISPENSER_PREFIX}.
@@ -304,8 +304,8 @@ public abstract class XmlRpcRelay {
                 retval = pullCalls( hostname, timeout );
             }
 
-            // Handler acceptResult method.
-            else if ( "acceptResult".equals( methodName ) ) {
+            // Handler receiveResult method.
+            else if ( "receiveResult".equals( methodName ) ) {
                 if ( params.size() != 2 ||
                      ! ( params.get( 0 ) instanceof String ) ||
                      ! ( params.get( 1 ) instanceof Map ) ) {
@@ -314,7 +314,7 @@ public abstract class XmlRpcRelay {
                 }
                 String callTag = (String) params.get( 0 );
                 Map result = (Map) params.get( 1 );
-                acceptResult( callTag, result );
+                receiveResult( callTag, result );
                 logger_.info( "Accepted result for " + callTag );
                 retval = null;
             }
@@ -380,7 +380,7 @@ public abstract class XmlRpcRelay {
          * @param   result   SAMP-friendly representation of XML-RPC call
          *                   return value
          */
-        public void acceptResult( String callTag, Map result )
+        public void receiveResult( String callTag, Map result )
                 throws SampException, InterruptedException {
             SampCall call;
             call = dispensedCalls_.remove( callTag );
@@ -391,7 +391,7 @@ public abstract class XmlRpcRelay {
                 }
             }
             else {
-                throw new SampException( "acceptResult failed for phantom tag "
+                throw new SampException( "receiveResult failed for phantom tag "
                                        + callTag );
             }
         }
