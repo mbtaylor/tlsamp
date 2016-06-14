@@ -116,11 +116,11 @@ deploy_https: $(WEBAPP).war $(RESOURCES)
 	cp $(WEBAPP).war /usr/share/tomcat/webapps/
 	/etc/init.d/tomcat start
 
-deploy_http: $(RESOURCES) $(TLSHUB) $(WEBAPP).war deploy.html
+deploy_http: $(RESOURCES) $(TLSHUB) $(WEBAPP).war deploy.html protocol.txt
 	rm -rf $(HTTP_DIR)/examples
 	mkdir $(HTTP_DIR)/examples
 	cp $(RESOURCES) $(HTTP_DIR)/examples/
-	cp $(WEBAPP).war $(TLSHUB) $(HTTP_DIR)/
+	cp $(WEBAPP).war $(TLSHUB) protocol.txt $(HTTP_DIR)/
 	cp deploy.html $(HTTP_DIR)/index.html
 
 
