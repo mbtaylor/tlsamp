@@ -12,8 +12,8 @@ import org.astrogrid.samp.SampMap;
  */
 public class SampCall extends SampMap {
 
-    /** Key for the callback operation name (a string). */
-    public static final String OPERATION_NAME_KEY = "samp.methodName";
+    /** Key for the callback XML-RPC method name (a string). */
+    public static final String METHOD_NAME_KEY = "samp.methodName";
 
     /** Key for the callback parameters (a list). */
     public static final String PARAMS_KEY = "samp.params";
@@ -25,7 +25,7 @@ public class SampCall extends SampMap {
     public static final String REFERER_KEY = "samp.referer";
 
     private static final String[] KNOWN_KEYS = new String[] {
-        OPERATION_NAME_KEY,
+        METHOD_NAME_KEY,
         PARAMS_KEY,
         TAG_KEY,
         REFERER_KEY,
@@ -51,29 +51,28 @@ public class SampCall extends SampMap {
     /**
      * Constructs a call with its essential data filled in.
      *
-     * @param  operationName  name in SAMP API of operation
+     * @param  methodName  name of XML-RPC method
      * @param  params   list of SAMP-friendly parameter objects
      * @param  callTag   string identifier, should be unique
      */
-    public SampCall( String operationName, List params, String callTag ) {
+    public SampCall( String methodName, List params, String callTag ) {
         this();
-        put( OPERATION_NAME_KEY, operationName );
+        put( METHOD_NAME_KEY, methodName );
         put( PARAMS_KEY, params );
         put( TAG_KEY, callTag );
     }
 
     /**
-     * Returns the name of the operation represented by this call
-     * from the SAMP API.
+     * Returns the name of the XML-RPC method represented by this call.
      *
-     * @return  operation name
+     * @return  method name
      */
-    public String getOperationName() {
-        return getString( OPERATION_NAME_KEY );
+    public String getMethodName() {
+        return getString( METHOD_NAME_KEY );
     }
 
     /**
-     * Returns a list of parameters for this operation.
+     * Returns a list of parameters for this call.
      *
      * @retrun  parameter list
      */

@@ -196,7 +196,7 @@ public abstract class XmlRpcRelay {
                 waitForEntry( call, RESULT_KEY, resultMaxWaitSec_ * 1000 );
             if ( resultObj == null ) {
                 throw new SampException( "No hub response for "
-                                       + call.getOperationName()
+                                       + call.getMethodName()
                                        + " (relay timeout "
                                        + resultMaxWaitSec_ + "sec)" );
             }
@@ -361,7 +361,7 @@ public abstract class XmlRpcRelay {
                     c.put( COLLECTED_KEY, "1" );
                     c.notifyAll();
                 }
-                logger_.info( "Dispensed call: " + c.getOperationName() + " "
+                logger_.info( "Dispensed call: " + c.getMethodName() + " "
                             + c.getCallTag() );
 
                 // Prepare to receive a response corresponding to it.

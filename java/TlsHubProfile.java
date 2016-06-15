@@ -320,16 +320,17 @@ public class TlsHubProfile implements HubProfile {
      */
     private void handleCall( SampXmlRpcClient xClient, SampCall call,
                              URL relayUrl ) {
-        String callOp = call.getOperationName();
-        logger_.info( "Handling relayed call " + callOp );
+        String methodName = call.getMethodName();
+        logger_.info( "Handling relayed call " + methodName );
         SampResult result;
-        if ( wxHandler_.canHandleCall( callOp ) ) {
+        if ( wxHandler_.canHandleCall( methodName ) ) {
             List callParams = call.getParams();
             HttpServer.Request fakeRequest =
                 createFakeRequest( call, relayUrl );
             try {
                 Object output =
-                    wxHandler_.handleCall( callOp, callParams, fakeRequest );
+                    wxHandler_.handleCall( methodName, callParams,
+                                           fakeRequest );
                 result = SampResult.createSuccessResult( output );
             }
             catch ( Throwable e ) {
@@ -337,8 +338,8 @@ public class TlsHubProfile implements HubProfile {
             }
         }
         else {
-            result = SampResult.createErrorResult( "Unknown operation "
-                                                 + "\"" + callOp + "\"" );
+            result = SampResult.createErrorResult( "Unknown method "
+                                                 + "\"" + methodName + "\"" );
         }
         String tag = call.getCallTag();
         List resultParams = Arrays.asList( new Object[] { tag, result } );
