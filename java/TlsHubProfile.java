@@ -9,6 +9,7 @@ import java.net.ServerSocket;
 import java.net.SocketAddress;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -282,33 +283,51 @@ public class TlsHubProfile implements HubProfile {
      */
     private void handleCall( SampXmlRpcClient xClient, String callTag,
                              SampCall call, URL relayUrl ) {
-        String methodName = call.getMethodName();
-        logger_.info( "Handling relayed call " + methodName );
+        String tlsMethodName = call.getMethodName();
+        if ( tlsMethodName == null ||
+             ! tlsMethodName.startsWith( COLLECTOR_PREFIX ) ) {
+            logger_.info( "Ignoring unexpected collected call "
+                        + tlsMethodName );
+        }
+        String baseMethodName =
+            tlsMethodName.substring( COLLECTOR_PREFIX.length() );
+        String webMethodName =
+            WebClientProfile.WEBSAMP_HUB_PREFIX + baseMethodName;
+        String callStr = baseMethodName + " " + callTag;
+        logger_.info( "Handling relayed call " + callStr );
 
         // Do the local processing that services the serialized call.
+        // We transform the call to the corresponding Web Profile API call,
+        // use a WebProfile handler, and then transform the result back
+        // from the Web Profile API.  The differences are very small.
         SampResult result;
-        if ( wxHandler_.canHandleCall( methodName ) ) {
-            List callParams = call.getParams();
+        if ( wxHandler_.canHandleCall( webMethodName ) ) {
+            List params = new ArrayList( call.getParams() );
+            Object tagParam = params.size() > 0 ? params.remove( 0 ) : null;
+            if ( ! callTag.equals( tagParam ) ) {
+                logger_.warning( "Call tag mismatch for " + baseMethodName
+                               + ": " + tagParam + " != " + callTag );
+            }
             HttpServer.Request fakeRequest =
                 createFakeRequest( call, relayUrl );
             try {
-                Object output =
-                    wxHandler_.handleCall( methodName, callParams,
-                                           fakeRequest );
-                result = SampResult.createSuccessResult( output );
+                Object webOutput =
+                    wxHandler_.handleCall( webMethodName, params, fakeRequest );
+                Object tlsOutput = webToTlsOutput( baseMethodName, webOutput );
+                result = SampResult.createSuccessResult( tlsOutput );
             }
             catch ( Throwable e ) {
                 result = SampResult.createErrorResult( e.toString() );
             }
         }
         else {
-            result = SampResult.createErrorResult( "Unknown method "
-                                                 + "\"" + methodName + "\"" );
+            result = SampResult
+                    .createErrorResult( "Unknown method " + callStr );
         }
         logger_.info( "Got result "
                     + ( result.containsKey( "samp.value" ) ? "success"
                                                            : "error" )
-                    + " for " + methodName );
+                    + " for " + callStr );
 
         // Pass the result back asynchronously to the relay.
         List resultParams = Arrays.asList( new Object[] { callTag, result } );
@@ -318,7 +337,31 @@ public class TlsHubProfile implements HubProfile {
         }
         catch ( IOException e ) {
             logger_.log( Level.WARNING,
-                         "Failed to pass result back for " + callTag, e );
+                         "Failed to pass result back for " + callStr, e );
+        }
+    }
+
+    /**
+     * Converts the output of a Web Profile hub API method to the output
+     * of the corresponding TLS Profile hub API method.
+     * In most cases, the changes are very slight.
+     *
+     * @param   baseMethodName  method name without namespace previx
+     * @param   webOutput   value that was returned from Web Profile
+     *                      implementation of hub API method
+     * @return  value that should be returned from TLS Profile
+     *          implementation of hub API method
+     */
+    private static Object webToTlsOutput( String baseMethodName,
+                                          Object webOutput ) {
+        if ( "register".equals( baseMethodName ) &&
+             webOutput instanceof Map ) {
+            Map map = new LinkedHashMap( (Map) webOutput );
+            map.remove( WebClientProfile.URLTRANS_KEY );
+            return map;
+        }
+        else {
+            return webOutput;
         }
     }
 

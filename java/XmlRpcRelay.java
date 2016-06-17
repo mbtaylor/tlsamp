@@ -6,7 +6,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 import org.astrogrid.samp.SampUtils;
 import org.astrogrid.samp.client.SampException;
-import org.astrogrid.samp.web.WebClientProfile;
 import org.astrogrid.samp.xmlrpc.SampXmlRpcHandler;
 
 /**
@@ -127,29 +126,20 @@ public abstract class XmlRpcRelay {
             return methodName.startsWith( TlsHubProfile.COLLECTOR_PREFIX );
         }
 
-        public Object handleCall( final String tlsMethodName, List allParams,
+        public Object handleCall( final String methodName, List params,
                                   Object reqInfo )
                 throws InterruptedException, SampException {
-            if ( !tlsMethodName.startsWith( TlsHubProfile.COLLECTOR_PREFIX ) ) {
-                throw new IllegalArgumentException();
-            }
-            String baseMethodName =
-                tlsMethodName
-               .substring( TlsHubProfile.COLLECTOR_PREFIX.length() );
 
             // Extract first parameter in list as call tag.
-            if ( allParams.size() == 0 ||
-                 ! ( allParams.get( 0 ) instanceof String ) ) {
+            if ( params.size() == 0 ||
+                 ! ( params.get( 0 ) instanceof String ) ) {
                 throw new SampException( "No call tag for TLS SAMP call "
-                                       + tlsMethodName );
+                                       + methodName );
             }
-            String callTag = (String) allParams.get( 0 );
+            String callTag = (String) params.get( 0 );
 
             // Construct a SampCall object corresponding to this submission.
-            String webMethodName =
-                WebClientProfile.WEBSAMP_HUB_PREFIX + baseMethodName;
-            List dataParams = allParams.subList( 1, allParams.size() );
-            SampCall call = new SampCall( webMethodName, dataParams );
+            SampCall call = new SampCall( methodName, params );
 
             // Store additional call metadata.
             String referer = getHeader( reqInfo,
@@ -166,14 +156,16 @@ public abstract class XmlRpcRelay {
                     throw new SampException( "Can't determine hostname" );
                 }
             }
-            String callStr = baseMethodName + " " + callTag;
+            String callStr = methodName
+                            .replaceFirst( TlsHubProfile.COLLECTOR_PREFIX, "" )
+                             + " " + callTag;
 
             // Store it for later retrieval, indexed by its tag.
             boolean isUnique = ! dispenseHandler_.hasTag( callTag )
                             && callStore_.putNew( callTag, call );
             if ( ! isUnique ) {
                 throw new SampException( "Can't accept call with tag already "
-                                       + "in use: " + callTag );
+                                       + "in use: " + callStr );
             }
             logger_.info( "Received call: " + callStr );
 
@@ -182,7 +174,7 @@ public abstract class XmlRpcRelay {
                                            collectMaxWaitSec_ * 1000 ) ) {
                 throw new SampException( "No hub (relay timeout "
                                        + collectMaxWaitSec_ + "sec) for "
-                                       + callTag );
+                                       + callStr );
             }
             logger_.info( "Dispensed call: " + callStr );
 
@@ -191,7 +183,7 @@ public abstract class XmlRpcRelay {
             Object resultObj =
                 waitForEntry( call, RESULT_KEY, resultMaxWaitSec_ * 1000 );
             if ( ! ( resultObj instanceof Map ) ) {
-                throw new SampException( "No hub response for " + baseMethodName
+                throw new SampException( "No hub response for " + callStr
                                        + " (relay timeout "
                                        + resultMaxWaitSec_ + "sec)" );
             }
@@ -201,10 +193,6 @@ public abstract class XmlRpcRelay {
             SampResult result = SampResult.asResult( (Map) resultObj );
             Object value = result.getValue();
             if ( value != null ) {
-                if ( "register".equals( baseMethodName ) &&
-                     value instanceof Map ) {
-                    ((Map) value).remove( WebClientProfile.URLTRANS_KEY );
-                }
                 return value;
             }
             else {

@@ -43,13 +43,23 @@ Relay:
    Runs XML-RPC service at endpoint known to web application.
 
    samp.tlshub.* XML-RPC calls:
+      This XML-RPC API is identical to the samp.webhub.* API,
+      with the following exceptions:
+
+         - the method name prefix is "samp.tlshub." not "samp.webhub."
+
+         - every call has an additional string parameter callTag 
+           prepended to the parameter list.  This should be a
+           globally unique and unguessable string, originated by
+           the web application, identifying the call.
+
+         - the map returned by the register() call does not
+           contain the samp.url-translator entry.
+
       Each such call is collected and the callTag recorded.
       If the callTag is identical to that of another call also being
       processed, the relay SHOULD respond with an XML-RPC Fault.
 
-      The call is manipulated slightly so that it looks identical
-      to a Web Profile call: the first argument (callTag) is removed,
-      and the prefix is changed from "samp.tlshub." to "samp.webhub.".
       The call's content is kept until a hub requests it by tag
       (using a samp.tlsfwd.pullCall call), then it is serialized and
       dispensed to that hub.
@@ -68,8 +78,8 @@ Relay:
       When the corresponding (i.e. matched by callTag) call to
       samp.tlsfwd.receiveResult is received, the result is returned
       (synchronously) as the result of this XML-RPC call.
-      One change is made: the "samp.url-translator" entry is removed
-      from register call result maps.
+      A successful result is returned as-is, and an error result is
+      returned as an XML-RPC Fault.
 
       That received result is expected to be running on the same host as
       the originator of the samp.tlshub call - the relay MAY decline
@@ -77,7 +87,7 @@ Relay:
 
       The samp.tlshub calls are very similar to the samp.webhub calls
       used by the Web Profile, but the relay is not required or
-      expected to examine their content beyond removing the callTag
+      expected to examine their content beyond noting the callTag
       argument.
 
    samp.tlsfwd.* XML-RPC calls:
@@ -105,12 +115,9 @@ Relay:
 
          Each map represents a submitted samp.tlshub.* call, with keys:
              samp.methodName
-                XML-RPC method name
-                (as received, but with prefix changed from samp.webhub.
-                 to samp.tlshub.)
+                XML-RPC method name (as received)
              samp.params
-                XML-RPC parameter list
-                (as received, but with first (callTag) parameter removed)
+                XML-RPC parameter list (as received, including callTag)
              samp.referer
                 content of HTTP "Referer" header accompanying submitted
                 XML-RPC request
@@ -156,7 +163,7 @@ TLS Profile Hub:
       Servicing the calls should be done in the same way as for the
       Web Profile, except that the information to be displayed
       during user confirmation of registration (REC-SAMP-1.3 sec 5.4.2.2)
-      should include the identity of the hub relay from which the
+      SHOULD include the identity of the hub relay from which the
       registration request was retrieved, as well as the content of
       the samp.referer header included in that serialised call.
  
