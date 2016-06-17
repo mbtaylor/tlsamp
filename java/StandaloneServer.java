@@ -5,7 +5,6 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.SocketAddress;
 import java.net.URL;
-import java.util.Random;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.net.ssl.SSLServerSocket;
@@ -37,9 +36,12 @@ public class StandaloneServer {
      * @param   localDocBase    path prefix on JVM's classpath at which
      *                          servable documents are located
      * @param   serverDocPath   server endpoint for servable documents
+     * @param   checkHostnames  whether to check matching hostname between
+     *                          relay submitter and servicer clients
      */
     public StandaloneServer( ServerSocket ssock, int port, String relayPath,
-                             String localDocBase, String serverDocPath )
+                             String localDocBase, String serverDocPath,
+                             boolean checkHostnames )
             throws IOException {
         Logger.getLogger( getClass().getName() )
               .warning( "Running "
@@ -54,7 +56,7 @@ public class StandaloneServer {
         if ( relayPath != null ) {
             SampXmlRpcServer xServer =
                     new InternalServer( hServer_, relayPath );
-            XmlRpcRelay relay = new XmlRpcRelay( new Random( 890223 ) ) {
+            XmlRpcRelay relay = new XmlRpcRelay( checkHostnames ) {
                 public String getHostName( Object reqObj ) {
                     if ( reqObj instanceof HttpServer.Request ) {
                         SocketAddress saddr =
@@ -91,10 +93,12 @@ public class StandaloneServer {
      * (could be web samp clients).
      */
     public static void main( String[] args ) throws IOException {
-        Logger.getLogger( "org.astrogrid.samp" ).setLevel( Level.INFO );
+        Logger logger = Logger.getLogger( "org.astrogrid.samp" );
+        logger.setLevel( Level.INFO );
         String localDocBase = "/resources";
         String serverDocPath = "/docs";
         String relayPath = serverDocPath + "/xmlrpc";
+        boolean checkHostnames = true;
 
         // HTTP server: just serves documents.  Will work with normal
         // web profile.  If you set relayPath to the non-null value,
@@ -102,18 +106,25 @@ public class StandaloneServer {
         // need this, because in HTTP mode you don't need a relay,
         // but you could use it for testing if you can't get HTTPS
         // to work (e.g. if you have no certificates).
+        int httpPort = 2113;
         StandaloneServer httpServer =
             new StandaloneServer( new ServerSocket(),
-                                  2113, null, localDocBase, serverDocPath );
+                                  httpPort, null, localDocBase, serverDocPath,
+                                  checkHostnames );
 
         // HTTPS server: serves documents and hub relay.
         // Needs TLS profile hub on client's host.
+        int httpsPort = 2112;
         StandaloneServer httpsServer =
             new StandaloneServer( SSLServerSocketFactory.getDefault()
                                                         .createServerSocket(),
-                                  2112, relayPath,
-                                  localDocBase, serverDocPath );
+                                  httpsPort, relayPath,
+                                  localDocBase, serverDocPath, checkHostnames );
         httpServer.start();
+        logger.info( "Resources at http://localhost:" + httpPort
+                   + serverDocPath );
         httpsServer.start();
+        logger.info( "Resources at https://<certificate-host>:" + httpsPort
+                   + serverDocPath );
     }
 }

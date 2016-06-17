@@ -1,77 +1,69 @@
 package org.astrogrid.samp.tls;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
-import java.util.Set;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
-import org.astrogrid.samp.DataException;
 import org.astrogrid.samp.SampUtils;
 import org.astrogrid.samp.client.SampException;
-import org.astrogrid.samp.hub.KeyGenerator;
 import org.astrogrid.samp.web.WebClientProfile;
-import org.astrogrid.samp.xmlrpc.ActorHandler;
 import org.astrogrid.samp.xmlrpc.SampXmlRpcHandler;
 
 /**
- * This class forwards XML-RPC messages from one third-party
+ * This class forwards XML-RPC calls from one third-party
  * client to another.
- * It receives messages from a "submitter" client, stores them internally,
- * and dispensees them to a different "servicer" client on request.
- * It also holds returns responses from the servicer back to the
- * submitter.
- * Both submitter and servicer must be running on the same host as each
+ * It receives serialized XML-RPC calls from a "submitter" client
+ * (the web application), stores them internally, and dispenses
+ * them on request to a different "servicer" client (the desktop hub).
+ * Having dispensed them, it waits for (asynchronous) returned values,
+ * and passes those back (synchronously, as the result of the original
+ * XML-RPC call) to the submitter.
+ *
+ * <p>Both submitter and servicer should be running on the same host as each
  * other (though normally not the same as the one on which this relay
  * is running).
  * How the submitter tells the servicer to come looking for the
- * messages stored here is somebody else's problem.
+ * messages stored here is somebody else's problem (nudge).
  *
- * To use this class, there must be some kind of harness that plugs it into
- * an HTTP server, allowing both  and dispenser clients to call
- * into it.  That harness must implement the abstract {@link #getHostName}
- * method in a suitable way.
+ * <p>To use this class, there must be some kind of harness that plugs it into
+ * an HTTP server, allowing both submitter and servicer clients to call
+ * into it.
  *
  * @author   Mark Taylor
  * @since    14 Mar 2016
  */
 public abstract class XmlRpcRelay {
 
+    private final boolean checkHostnames_;
     private final int collectMaxWaitSec_;
     private final int resultMaxWaitSec_;
-    private final ConcurrentMap<String,BlockingQueue<SampCall>> submittedCalls_;
+    private final BlockingStore<String,SampCall> callStore_;
     private final SampXmlRpcHandler receiveHandler_;
-    private final SampXmlRpcHandler dispenseHandler_;
+    private final DispenseHandler dispenseHandler_;
     private static final String RESULT_KEY = "jsamp.relay.result";
-    private static final String COLLECTED_KEY = "jsamp.relay.collected";
+    private static final String HOSTNAME_KEY = "jsamp.relay.hostname";
     private static final Logger logger_ =
         Logger.getLogger( XmlRpcRelay.class.getName() );
 
     /**
      * Constructor.
      *
-     * @param   rnd  random number generator, used for token generation
+     * @param  checkHostnames  if true, ensure that the submitter and servicer
+     *                         are on the same host for each named call
      */
-    public XmlRpcRelay( Random rnd ) {
+    public XmlRpcRelay( boolean checkHostnames ) {
+        checkHostnames_ = checkHostnames;
         collectMaxWaitSec_ = 10;
         resultMaxWaitSec_ = 600;
-        submittedCalls_ =
-            new ConcurrentHashMap<String,BlockingQueue<SampCall>>();
-        KeyGenerator keyGen = new KeyGenerator( "samp.tlsfwd", 16, rnd );
+        callStore_ = new BlockingStore<String,SampCall>();
 
         // This one is what the submitter (SAMP client) talks to.
-        // It looks exactly like a normal hub interface.
-        receiveHandler_ = new ReceiveHandler( keyGen );
+        // It looks quite like a normal hub interface, but every method
+        // requires a new (unique, unguessable) string argument callTag
+        // prepended to the argument list.
+        receiveHandler_ = new ReceiveHandler();
 
         // This one is what the servicer (hub tls profile) talks to.
-        // It has the methods defined in DispenseActor.
         dispenseHandler_ = new DispenseHandler();
     }
 
@@ -94,22 +86,10 @@ public abstract class XmlRpcRelay {
     }
 
     /**
-     * Returns a call queue for a given host.
-     *
-     * @param   hostname  host identifier string
-     * @return  queue
-     */
-    private BlockingQueue<SampCall> getQueue( String hostname ) {
-        submittedCalls_.putIfAbsent( hostname,
-                                     new LinkedBlockingQueue<SampCall>() );
-        return submittedCalls_.get( hostname );
-    }
-
-    /**
      * Returns a host identifier string given a request object.
      *
      * <p>The request object is the final parameter passed to the
-     * {@link org.astrogrid.samp.xmlrpc.SampXmlRpcHandler#handleCall handleCall}
+     * {@link org.astrogrid.samp.xmlrpc.SampXmlRpcHandler#handleCall handleCall
      * method; its nature depends on the XmlRpc implementation within
      * which this relay is being harnessed.
      *
@@ -134,77 +114,97 @@ public abstract class XmlRpcRelay {
 
     /**
      * Handler implementation for the receiver endpoint.
-     *
-     * <p>Currently, the XML-RPC interface for this is identical to that
-     * used by the SAMP hub in the Web Profile.
      */
     private class ReceiveHandler implements SampXmlRpcHandler {
-        private final KeyGenerator keyGen_;
 
         /**
          * Constructor.
-         *
-         * @param   keyGen  key generator
          */
-        ReceiveHandler( KeyGenerator keyGen ) {
-            keyGen_ = keyGen;
+        ReceiveHandler() {
         }
 
         public boolean canHandleCall( String methodName ) {
-            return methodName.startsWith( WebClientProfile.WEBSAMP_HUB_PREFIX );
+            return methodName.startsWith( TlsHubProfile.COLLECTOR_PREFIX );
         }
 
-        public Object handleCall( final String methodName, List allParams,
+        public Object handleCall( final String tlsMethodName, List allParams,
                                   Object reqInfo )
                 throws InterruptedException, SampException {
+            if ( !tlsMethodName.startsWith( TlsHubProfile.COLLECTOR_PREFIX ) ) {
+                throw new IllegalArgumentException();
+            }
+            String baseMethodName =
+                tlsMethodName
+               .substring( TlsHubProfile.COLLECTOR_PREFIX.length() );
+
+            // Extract first parameter in list as call tag.
+            if ( allParams.size() == 0 ||
+                 ! ( allParams.get( 0 ) instanceof String ) ) {
+                throw new SampException( "No call tag for TLS SAMP call "
+                                       + tlsMethodName );
+            }
+            String callTag = (String) allParams.get( 0 );
 
             // Construct a SampCall object corresponding to this submission.
-            String hostname = getHostName( reqInfo );
-            if ( hostname == null ) {
-                throw new SampException( "Can't determine hostname" );
-            }
-            List params = new ArrayList( allParams );
-            String callTag = keyGen_.next();
-            SampCall call = new SampCall( methodName, params, callTag );
+            String webMethodName =
+                WebClientProfile.WEBSAMP_HUB_PREFIX + baseMethodName;
+            List dataParams = allParams.subList( 1, allParams.size() );
+            SampCall call = new SampCall( webMethodName, dataParams );
+
+            // Store additional call metadata.
             String referer = getHeader( reqInfo,
                                         TlsAuthHeaderControl.REFERER_HDR );
             if ( referer != null ) {
                 call.put( SampCall.REFERER_KEY, referer );
             }
+            if ( checkHostnames_ ) {
+                String hostname = getHostName( reqInfo );
+                if ( hostname != null ) {
+                    call.put( HOSTNAME_KEY, hostname );
+                }
+                else {
+                    throw new SampException( "Can't determine hostname" );
+                }
+            }
+            String callStr = baseMethodName + " " + callTag;
 
-            // Enqueue it on a queue specific to the host from which it is
-            // being submitted.  It must be retrieved from the same host.
-            BlockingQueue<SampCall> queue = getQueue( hostname );
-            if ( queue.offer( call ) ) {
-                logger_.info( "Submitted call " + methodName );
+            // Store it for later retrieval, indexed by its tag.
+            boolean isUnique = ! dispenseHandler_.hasTag( callTag )
+                            && callStore_.putNew( callTag, call );
+            if ( ! isUnique ) {
+                throw new SampException( "Can't accept call with tag already "
+                                       + "in use: " + callTag );
             }
-            else {
-                throw new SampException( "Too many calls queued"
-                                       + " (" + queue.size() + ")" );
-            }
+            logger_.info( "Received call: " + callStr );
 
             // Wait for call to be collected by servicer; fail if timeout. 
-            if ( waitForEntry( call, COLLECTED_KEY,
-                               collectMaxWaitSec_ * 1000 ) == null ) {
-                queue.remove( call );
+            if ( callStore_.removeUntaken( callTag,
+                                           collectMaxWaitSec_ * 1000 ) ) {
                 throw new SampException( "No hub (relay timeout "
-                                       + collectMaxWaitSec_ + "sec)" );
+                                       + collectMaxWaitSec_ + "sec) for "
+                                       + callTag );
             }
+            logger_.info( "Dispensed call: " + callStr );
 
+            // Call has been dispensed.
             // Wait for result from servicer; fail if timeout.
             Object resultObj =
                 waitForEntry( call, RESULT_KEY, resultMaxWaitSec_ * 1000 );
-            if ( resultObj == null ) {
-                throw new SampException( "No hub response for "
-                                       + call.getMethodName()
+            if ( ! ( resultObj instanceof Map ) ) {
+                throw new SampException( "No hub response for " + baseMethodName
                                        + " (relay timeout "
                                        + resultMaxWaitSec_ + "sec)" );
             }
+            logger_.info( "Got result from call: " + callStr );
 
             // Return result value or error.
             SampResult result = SampResult.asResult( (Map) resultObj );
             Object value = result.getValue();
             if ( value != null ) {
+                if ( "register".equals( baseMethodName ) &&
+                     value instanceof Map ) {
+                    ((Map) value).remove( WebClientProfile.URLTRANS_KEY );
+                }
                 return value;
             }
             else {
@@ -249,7 +249,7 @@ public abstract class XmlRpcRelay {
      * This has three methods:
      * <pre>
      *    void ping()
-     *    List<SampCall> pullCalls(String timeoutSec)
+     *    SampCall pullCall(String callTag, String timeoutSec)
      *    void receiveResult(String callTag, SampResult result)
      * </pre>
      * These method names are prefixed with the string
@@ -289,87 +289,73 @@ public abstract class XmlRpcRelay {
                 retval = null;
             }
 
-            // Handler pullCalls method
-            else if ( "pullCalls".equals( methodName ) ) {
-                String hostname = getHostName( reqInfo );
-                if ( hostname == null ) {
+            // Handle pullCall method
+            else if ( "pullCall".equals( methodName ) ) {
+                if ( params.size() != 2 ||
+                     ! ( params.get( 0 ) instanceof String ) ||
+                     ! ( params.get( 1 ) instanceof String ) ) {
+                    throw new SampException( "Wrong params for " + fqName
+                                           + "(string callTag,"
+                                           + " string timeoutSec)" );
+                }
+                String callTag = (String) params.get( 0 );
+                int timeoutMillis =
+                    SampUtils.decodeInt( (String) params.get( 1 ) ) * 1000;
+
+                String reqHostname = checkHostnames_ ? getHostName( reqInfo )
+                                                     : null;
+                if ( checkHostnames_ && reqHostname == null ) {
                     throw new SampException( "Can't determine hostname" );
                 }
-                if ( params.size() != 1 ||
-                     ! ( params.get( 0 ) instanceof String ) ) {
-                    throw new SampException( "Wrong params for " + fqName
-                                           + "(String timeout)" );
+
+                // Wait for the requested call to arrive.
+                // In case of timeout it will be null.
+                SampCall call = callStore_.take( callTag, timeoutMillis );
+                retval = call;
+
+                // Check it if necessary.
+                if ( checkHostnames_ && call != null ) {
+                    String callHostname = (String) call.get( HOSTNAME_KEY );
+                    if ( ! reqHostname.equals( callHostname ) ) {
+                        throw new SampException( "Hostname mismatch: "
+                                               + reqHostname + " != "
+                                               + callHostname );
+                    }
                 }
-                String timeout = (String) params.get( 0 );
-                retval = pullCalls( hostname, timeout );
+
+                // Prepare to receive a response corresponding to the call.
+                if ( call != null ) {
+                    dispensedCalls_.put( callTag, call );
+                }
             }
 
-            // Handler receiveResult method.
+            // Handle receiveResult method.
             else if ( "receiveResult".equals( methodName ) ) {
                 if ( params.size() != 2 ||
                      ! ( params.get( 0 ) instanceof String ) ||
                      ! ( params.get( 1 ) instanceof Map ) ) {
                     throw new SampException( "Wrong params for " + fqName
-                                           + "(String callTag, Map result)" );
+                                           + "(string callTag, map result)" );
+                }
+                if ( checkHostnames_ ) {
+                    String hostname = getHostName( reqInfo );
+                    if ( hostname == null ) {
+                        throw new SampException( "Can't determine hostname" );
+                    }
                 }
                 String callTag = (String) params.get( 0 );
                 Map result = (Map) params.get( 1 );
                 receiveResult( callTag, result );
-                logger_.info( "Accepted result for " + callTag );
                 retval = null;
             }
+
+            // Unknown method.
             else {
                 throw new SampException( "Uknown dispenser method: " + fqName );
             }
 
             // Make sure that a SAMP-friendly return value is returned.
             return retval == null ? "" : retval;
-        }
-
-        /**
-         * Acquires a list of any calls that have been submitted by the
-         * submitter.  It blocks for up to a given number of seconds
-         * until at least one is available.
-         *
-         * @param  hostname   hostname of submitter (queue key)
-         * @param  timeoutSec  number of seconds to block for, as SAMP integer
-         * @return   list of calls; not null, but may be empty if no
-         *           messages show up by timeout expiry
-         */
-        public List<SampCall> pullCalls( String hostname, String timeoutSec )
-                throws InterruptedException {
-            int nSec = SampUtils.decodeInt( timeoutSec );
-
-            // Block until at least one call is available for dispensing,
-            // and then gather that and any others that are immediately
-            // available.  All these are removed from the queue.
-            BlockingQueue<SampCall> queue = getQueue( hostname );
-            SampCall call0 = queue.poll( nSec, TimeUnit.SECONDS );
-            List<SampCall> callList = new ArrayList<SampCall>();
-            if ( call0 != null ) {
-                callList.add( call0 );
-                for ( SampCall c = null; ( c = queue.poll() ) != null; ) {
-                    callList.add( c );
-                }
-            }
-
-            // Do some bookkeeping for each dispensed call.
-            for ( SampCall c : callList ) {
-
-                // Note that the call has been dispensed.
-                synchronized ( c ) {
-                    c.put( COLLECTED_KEY, "1" );
-                    c.notifyAll();
-                }
-                logger_.info( "Dispensed call: " + c.getMethodName() + " "
-                            + c.getCallTag() );
-
-                // Prepare to receive a response corresponding to it.
-                dispensedCalls_.put( c.getCallTag(), c );
-            }
-
-            // Return calls to be passed to the servicer.
-            return callList;
         }
 
         /**
@@ -382,8 +368,7 @@ public abstract class XmlRpcRelay {
          */
         public void receiveResult( String callTag, Map result )
                 throws SampException, InterruptedException {
-            SampCall call;
-            call = dispensedCalls_.remove( callTag );
+            SampCall call = dispensedCalls_.remove( callTag );
             if ( call != null ) {
                 synchronized ( call ) {
                     call.put( RESULT_KEY, result );
@@ -394,6 +379,17 @@ public abstract class XmlRpcRelay {
                 throw new SampException( "receiveResult failed for phantom tag "
                                        + callTag );
             }
+        }
+
+        /**
+         * Indicates whether the given tag is currently in use.
+         *
+         * @param  callTag  tag string
+         * @return   true iff <code>callTag</code> has a chance of clashing
+         *           with an existing tag
+         */
+        boolean hasTag( String callTag ) {
+            return dispensedCalls_.containsKey( callTag );
         }
     }
 }

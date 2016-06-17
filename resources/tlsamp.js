@@ -19,6 +19,8 @@ var samp = (function() {
     var TLSAMP_NUDGE_PORT = 21013;
     var TLSAMP_NUDGE_PATH = "/nudge";
     var TLSAMP_RELAY_PARAM = "relay";
+    var TLSAMP_CALLTAG_PARAM = "callTag";
+    var TLSAMP_PREFIX = "samp.tlshub.";
 
     // Tokens representing permissible types in a SAMP object (e.g. a message)
     TYPE_STRING = "string";
@@ -595,10 +597,7 @@ var samp = (function() {
                     errHandler(event);
                 }
             };
-            var sendXhr = function() {
-                xhr.send(req.toXml());
-            };
-            xClient.profile.preSend(sendXhr, errHandler);
+            xClient.profile.doSend(xhr, req, errHandler);
             return xhr;
         })(this);
     };
@@ -1023,16 +1022,17 @@ var samp = (function() {
     //       the XML-RPC endpoint for the XML-RPC server implementing
     //       the SAMP Web Profile.
     //
-    //    preSend(sendFunc, errHandler):
-    //       a function that invokes sendFunc() to dispatch an XHR request
-    //       if all is well, or (if present) errHandler(e) if there
-    //       is some problem.
+    //    doSend(xhr, request, errHandler):
+    //       a function that sends an XmlRpcRequest request
+    //       using a given XmlHttpRequest facade xhr,
+    //       and (if errHandler is supplied) invokes errHandler(e)
+    //       if there is some problem.
 
     // WebProfile - profile implementation for the SAMP Web Profile.
     var WebProfile = function() {
         this.endpoint = "http://localhost:" + WEBSAMP_PORT + WEBSAMP_PATH;
-        this.preSend = function(sendFunc, errHandler) {
-            sendFunc();
+        this.doSend = function(xhr, request, errHandler) {
+            xhr.send(request.toXml());
         };
     }
 
@@ -1066,7 +1066,7 @@ var samp = (function() {
             "http://localhost:" + TLSAMP_NUDGE_PORT + TLSAMP_NUDGE_PATH;
         if (imgNode === undefined) {
             imgNode = document.createElement("IMG");
-            imgNode.setAttribute("alt", "TLS-SAMP Machinery");
+            imgNode.setAttribute("alt", "");  // see HTML5 sec 4.7.1.1.17
             imgNode.setAttribute("src", nudgeSrcBase);
             var body = document.getElementsByTagName("BODY")[0];
             var tlsDiv = document.createElement("DIV");
@@ -1081,41 +1081,94 @@ var samp = (function() {
             throw new Error("imgNode argument not an <IMG> element");
         }
 
-        // Prepare actions for image node element events.
-        var hubPresentQueue = [];
-        var hubAbsentQueue = [];
-        imgNode.onload = function() {
-            while (hubPresentQueue.length > 0) {
-                hubPresentQueue.shift()();
+        // This has to be unique (over all clients talking to the relay
+        // at similar times) and unguessable.  The current implementation
+        // uses Math.random() which may not be good enough, since it is
+        // probably seeded from system time, so different clients might
+        // end up using the same value.
+        var createTag = function() {
+            var tagchrs = "0123456789abcdefghijklmnopqrstuvwxyz";
+            var tag0 = location.hostname + ":";
+            var i;
+            var tag;
+            return function(nchar) {
+                tag = tag0;
+                for (i = 0; i < nchar; i++) {
+                    tag += tagchrs[Math.floor(Math.random()*tagchrs.length)];
+                }
+                return tag;
             }
-            hubAbsentQueue = [];
-        };
-        imgNode.onerror = function() {
-            while (hubAbsentQueue.length > 0) {
-                hubAbsentQueue.shift()("No TLS Hub?");
-            }
-            hubPresentQueue = [];
-        };
+        }();
 
-        // Set up presend function that forms a wrapper for sending XHRs.
+        // Set up doSend function that submits XHRs.
         // It only proceeds with the send if contact with the localhost
         // hub can be established first.
         var nudgeSrc = function() {
             var iseq = 0;
-            return function() {
+            return function(tag) {
                 iseq += 1;
                 return nudgeSrcBase +
                        "?" + TLSAMP_RELAY_PARAM + "=" + relayUrl +
-                       "&" + "time=" + new Date().getTime() +
+                       "&" + "callTag=" + tag +
                        "&" + "iseq=" + iseq;
-            }
+            };
         }();
-        this.preSend = function(sendFunc, errHandler) {
-            hubPresentQueue.push(sendFunc);
+        var sendFunc = function(xhr, request, tag) {
+            var methodName =
+                request.methodName.replace(WEBSAMP_PREFIX, TLSAMP_PREFIX );
+            var params = Array.concat(tag, request.params);
+            var tlsReq = new XmlRpcRequest(methodName, params)
+            return function() {
+                xhr.send(tlsReq.toXml());
+            };
+        };
+        var errFunc = function(errHandler) {
             if (errHandler) {
-                hubAbsentQueue.push(errHandler);
+                return function() {
+                    errHandler("No TLS Hub?");
+                };
             }
-            imgNode.setAttribute("src", nudgeSrc());
+            else {
+                return null;
+            }
+        };
+        var ImgQueue = function() {
+            var jobQueue = [];
+            var running = null;
+            this.submit = function(imgEl, imgSrc, loadFunc, errFunc) {
+                jobQueue.push([imgEl, imgSrc, loadFunc, errFunc]);
+                runHead();
+            };
+            var runHead = function() {
+                if ( running == null && jobQueue.length > 0 ) {
+                    running = jobQueue.pop();
+                    runJob(running[0], running[1], running[2], running[3]);
+                }
+            };
+            var runJob = function(imgEl, imgSrc, loadFunc, errFunc) {
+                imgEl.onload = function() {
+                    running = null;
+                    loadFunc();
+                    runHead();
+                };
+                imgEl.onerror = function() {
+                    running = null;
+                    if (errFunc) {
+                        errFunc();
+                    }
+                    runHead();
+                };
+                imgEl.setAttribute("src", imgSrc);
+            };
+        };
+        var queue = new ImgQueue();
+        var tag;
+        this.doSend = function(xhr, request, errHandler) {
+            tag = createTag(12);
+            queue.submit(imgNode,
+                         nudgeSrc(tag),
+                         sendFunc(xhr, request, tag),
+                         errFunc(errHandler));
         };
     }
 

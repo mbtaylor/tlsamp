@@ -14,8 +14,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -56,7 +54,6 @@ public class TlsHubProfile implements HubProfile {
     private final MessageRestriction mrestrict_;
     private final SampXmlRpcClientFactory xClientFactory_;
     private final KeyGenerator keyGen_;
-    private final ConcurrentMap<URL,Jobber> jobMap_;
     private ExecutorService callExecutor_;
     private ExecutorService collectorExecutor_;
     private WebHubXmlRpcHandler wxHandler_;
@@ -67,6 +64,8 @@ public class TlsHubProfile implements HubProfile {
     public static final int NUDGE_PORT = 21013;
     public static final String NUDGE_PATH = "/nudge";
     public static final String RELAYURL_PARAM = "relay";
+    public static final String CALLTAG_PARAM = "callTag";
+    public static final String COLLECTOR_PREFIX = "samp.tlshub.";
     public static final String DISPENSER_PREFIX = "samp.tlsfwd.";
     private static final int TIMEOUT_SEC = 10;
 
@@ -88,7 +87,6 @@ public class TlsHubProfile implements HubProfile {
         mrestrict_ = mrestrict;
         xClientFactory_ = xClientFactory;
         keyGen_ = keyGen;
-        jobMap_ = new ConcurrentHashMap<URL,Jobber>();
     }
 
     /**
@@ -128,7 +126,6 @@ public class TlsHubProfile implements HubProfile {
             }
         } );
         collectorExecutor_ = callExecutor_;
-        jobMap_.clear();
         hServer_.start();
     }
 
@@ -140,7 +137,6 @@ public class TlsHubProfile implements HubProfile {
         hServer_.stop();
         callExecutor_.shutdown();
         collectorExecutor_.shutdown();
-        jobMap_.clear();
         hServer_ = null;
         wxHandler_ = null;
     }
@@ -168,7 +164,8 @@ public class TlsHubProfile implements HubProfile {
             String method = request.getMethod();
             ParsedUrl pu = new ParsedUrl( request.getUrl() );
             String path = pu.path_;
-            URL relayUrl = pu.getRelayUrl();
+            final URL relayUrl = pu.getRelayUrl();
+            final String callTag = pu.getCallTag();
             if ( NUDGE_PATH.equals( path ) ) {
                 if ( ! "GET".equals( method ) ) {
                     return HttpServer
@@ -177,14 +174,25 @@ public class TlsHubProfile implements HubProfile {
                 else if ( pu.isInit() ) {
                     return ImageResponse.createToggleResponse( false );
                 }
-                else if ( relayUrl == null ) {
+                else if ( relayUrl == null || callTag == null ) {
                     return HttpServer
                           .createErrorResponse( 400, "Bad tls-samp params" );
                 }
-                logger_.info( "Nudged to collect messages from " + relayUrl );
-                Jobber jobber = getJobber( relayUrl );
-                jobber.submitJob();
-                collectCalls( relayUrl, jobber );
+                logger_.info( "Nudged to collect message from " + relayUrl 
+                            + " with tag " + callTag );
+                try {
+                    collectorExecutor_.execute( new Runnable() {
+                        public void run() {
+                            collectCall( relayUrl, callTag );
+                        }
+                    } );
+                }
+                catch ( RejectedExecutionException e ) {
+                    String msg = "Can't collect call " + callTag;
+                    logger_.log( Level.WARNING, msg, e );
+                    return HttpServer
+                          .createErrorResponse( 500, msg, e );
+                }
                 HttpServer.Response response =
                     ImageResponse.createSpinResponse( iseq_++ );
                 response.getHeaderMap().put( "Cache-Control", "no-cache" );
@@ -211,56 +219,21 @@ public class TlsHubProfile implements HubProfile {
     }
 
     /**
-     * Returns a jobber to poll a given hub relay URL.
-     *
-     * @param   url  hub relay URL
-     * @return   jobber
-     */
-    private Jobber getJobber( URL url ) {
-        jobMap_.putIfAbsent( url, new Jobber( TIMEOUT_SEC * 1000 ) );
-        return jobMap_.get( url );
-    }
-
-    /**
      * Invoked when a nudge has been received to retrieve calls from
      * a hub relay service.
      *
      * @param  relayUrl   URL of remote message relay service
-     * @param  jobber   keeps track of job execution
+     * @param  callTag    identifier of call to be collected
      */
-    private void collectCalls( final URL relayUrl, final Jobber jobber ) {
-        if ( jobber.startJob() ) {
-            try {
-                collectorExecutor_.execute( new Runnable() {
-                    public void run() {
-                        try {
-                            doCollectCalls( relayUrl, TIMEOUT_SEC );
-                        }
-                        catch ( ConnectException e ) {
-                            logger_.log( Level.WARNING,
-                                         "No hub relay at " + relayUrl );
-                            return;
-                        }
-                        catch ( Throwable e ) {
-                            logger_.log( Level.WARNING, "Call collection error",
-                                         e );
-                            return;
-                        }
-                        finally {
-                            jobber.jobCompleted();
-                        }
-
-                        // Recurse.  The effect of this is that we are
-                        // looking for messages all the time within
-                        // TIMEOUT_SEC seconds of the last time a
-                        // nudge was received (but not beyond).
-                        collectCalls( relayUrl, jobber );
-                    }
-                } );
-            }
-            catch ( RejectedExecutionException e ) {
-                jobber.jobCompleted();
-            }
+    private void collectCall( URL relayUrl, String callTag ) {
+        try {
+            doCollectCall( relayUrl, callTag, TIMEOUT_SEC );
+        }
+        catch ( ConnectException e ) {
+            logger_.log( Level.WARNING, "No hub relay at " + relayUrl );
+        }
+        catch ( Throwable e ) {
+            logger_.log( Level.WARNING, "Call collection error", e );
         }
     }
 
@@ -269,44 +242,32 @@ public class TlsHubProfile implements HubProfile {
      * submits them for processing.
      *
      * @param  relayUrl  URL of remote hub relay service
+     * @param  callTag   tag of named call to collect
      * @param  timeoutSec  maximum wait time in seconds
      */
-    private void doCollectCalls( final URL relayUrl, int timeoutSec )
+    private void doCollectCall( final URL relayUrl, String callTag,
+                                int timeoutSec )
             throws IOException {
         final SampXmlRpcClient xClient =
             xClientFactory_.createClient( relayUrl );
         String timeoutStr = SampUtils.encodeInt( timeoutSec );
-        List<?> pullParams = Collections.singletonList( timeoutStr );
+        List<?> pullParams = Arrays.asList( new String[] {
+            callTag, timeoutStr,
+        } );
         Object pulled =
-            xClient.callAndWait( DISPENSER_PREFIX + "pullCalls", pullParams );
-        if ( pulled instanceof List ) {
-            List<?> pulledList = (List) pulled;
-            int nitem = pulledList.size();
-            int iitem = 0;
-            for ( Object pulledItem : pulledList ) {
-                if ( pulledItem instanceof Map ) {
-                    final SampCall call = SampCall.asCall( (Map) pulledItem );
-                    final String msg = "Handle call " + (++iitem) + "/" + nitem;
-                    try {
-                        callExecutor_.execute( new Runnable() {
-                            public void run() {
-                                logger_.info( msg );
-                                handleCall( xClient, call, relayUrl );
-                            }
-                        } );
-                    }
-                    catch ( RejectedExecutionException e ) {
-                        logger_.log( Level.WARNING,
-                                     "Can't execute pulled call " + call, e );
-                    }
-                }
-                else {
-                    logger_.warning( "Pulled call was not a SAMP map" );
-                }
+            xClient.callAndWait( DISPENSER_PREFIX + "pullCall", pullParams );
+        if ( pulled instanceof Map ) {
+            SampCall call = SampCall.asCall( (Map) pulled );
+            if ( call.isEmpty() ) {
+                logger_.warning( "Failed to collect call " + callTag
+                               + " (timeout?)" );
+            }
+            else {
+                handleCall( xClient, callTag, call, relayUrl );
             }
         }
         else {
-            logger_.warning( "Pulled call result was not a SAMP list" );
+            logger_.warning( "Pulled call was not a SAMP map: " + pulled );
         }
     }
 
@@ -315,13 +276,16 @@ public class TlsHubProfile implements HubProfile {
      * remote service.
      *
      * @param  xClient   XML-RPC client for communicating with relay
+     * @param  callTag   tag by which the serialized call was requested
      * @param  call     call object to be processed
      * @param  relayUrl   URL at which the hub relay resides
      */
-    private void handleCall( SampXmlRpcClient xClient, SampCall call,
-                             URL relayUrl ) {
+    private void handleCall( SampXmlRpcClient xClient, String callTag,
+                             SampCall call, URL relayUrl ) {
         String methodName = call.getMethodName();
         logger_.info( "Handling relayed call " + methodName );
+
+        // Do the local processing that services the serialized call.
         SampResult result;
         if ( wxHandler_.canHandleCall( methodName ) ) {
             List callParams = call.getParams();
@@ -341,15 +305,20 @@ public class TlsHubProfile implements HubProfile {
             result = SampResult.createErrorResult( "Unknown method "
                                                  + "\"" + methodName + "\"" );
         }
-        String tag = call.getCallTag();
-        List resultParams = Arrays.asList( new Object[] { tag, result } );
+        logger_.info( "Got result "
+                    + ( result.containsKey( "samp.value" ) ? "success"
+                                                           : "error" )
+                    + " for " + methodName );
+
+        // Pass the result back asynchronously to the relay.
+        List resultParams = Arrays.asList( new Object[] { callTag, result } );
         try {
             xClient.callAndWait( DISPENSER_PREFIX + "receiveResult",
                                  resultParams );
         }
         catch ( IOException e ) {
             logger_.log( Level.WARNING,
-                         "Failed to pass result back for " + tag, e );
+                         "Failed to pass result back for " + callTag, e );
         }
     }
 
@@ -439,13 +408,23 @@ public class TlsHubProfile implements HubProfile {
         }
 
         /**
+         * Returns the identifier of the serialized call that should be
+         * collected from the relay.
+         *
+         * @return  call tag
+         */
+        String getCallTag() {
+            return params_.get( CALLTAG_PARAM );
+        }
+
+        /**
          * Returns true if this is to be interpreted as an initialisation
          * (no request implicit).
          *
          * @return  true if this is an initialisation call
          */
         public boolean isInit() {
-            return params_.size() == 0;
+            return ! params_.containsKey( RELAYURL_PARAM );
         }
 
         /**
@@ -463,62 +442,6 @@ public class TlsHubProfile implements HubProfile {
                 logger_.warning( "Unsupported encoding " + encoding + "???" );
                 return txt;
             }
-        }
-    }
-
-    /**
-     * Keeps track of job submission and execution status.
-     */
-    private static class Jobber {
-        private final int lagMillis_;
-        private long latestSubmitTime_;
-        private boolean executing_;
-
-        /**
-         * Constructor.
-         *
-         * @param  lagMillis  maximum time to wait for a queued message to
-         *                    appear, in milliseconds (else give up)
-         */
-        Jobber( int lagMillis ) {
-            lagMillis_ = lagMillis;
-            latestSubmitTime_ = Long.MIN_VALUE;
-        }
-
-        /**
-         * Note that a job has been submitted.
-         */
-        public synchronized void submitJob() {
-            latestSubmitTime_ = System.currentTimeMillis();
-        }
-
-        /**
-         * Determines whether a job should be started.
-         * If the return value is true, it's assumed that the job actually
-         * starts now, that is it's currently running.
-         * A job should be started if an equivalent one is not already running,
-         * and if it's not too long since the last job submission.
-         */
-        public synchronized boolean startJob() {
-            if ( executing_ ) {
-                return false;
-            }
-            else if ( System.currentTimeMillis() - latestSubmitTime_
-                      < lagMillis_ ) {
-                executing_ = true;
-                return true;
-            }
-            else {
-                return false;
-            }
-        }
-
-        /**
-         * Notes that a job execution has stopped, that is it's no longer
-         * running.
-         */
-        public synchronized void jobCompleted() {
-            executing_ = false;
         }
     }
 }

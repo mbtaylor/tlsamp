@@ -19,6 +19,7 @@ public class SampResult extends SampMap {
 
     /** Key for the error message (string) resulting from call failure. */
     public static final String ERROR_KEY = "samp.error";
+
     private static final String[] KNOWN_KEYS = new String[] {
         VALUE_KEY,
         ERROR_KEY,

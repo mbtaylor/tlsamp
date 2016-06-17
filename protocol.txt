@@ -16,12 +16,25 @@ Web application:
 ----------------
    Knows location of HTTPS XML-RPC Relay service.
 
-   Makes XML-RPC calls to Relay URL exactly as for Web Profile.
-   However, every time it makes any XML-RPC call to the Relay URL,
-   it additionally requests an image (by manipulating the src
-   attribute of an HTML IMG element) with the URL:
+   Makes XML-RPC calls to Relay URL similarly as for Web Profile.
+   However, the XML-RPC method names have a different prefix,
+   "samp.tlshub." instead of "samp.webhub.", and each call takes
+   an additional string argument, callTag, prepended to the argument list.
+   This call tag SHOULD be globally unique and unguessable.
+   Whenever such a call is made, the web-app additionally requests
+   an image (by manipulating the src attribute of an HTML IMG element)
+   with the URL:
+    
+       http://localhost:21013/nudge?relay=relayUrl&callTag=callTag
 
-       http://localhost:21013/nudge?relay=relayUrl
+   Note according to the HTML5 spec, the alt attribute of such
+   an IMG element should be present but empty:
+
+      4.7.1.1.17 An image not intended for the user
+      ...
+      If an img element is being used for purposes other than
+      showing an image, e.g. as part of a service to count page views,
+      use an empty alt attribute.
 
    URL translation (REC-SAMP-1.3 sec 5.2.6): doesn't work.
 
@@ -29,59 +42,89 @@ Relay:
 ------
    Runs XML-RPC service at endpoint known to web application.
 
-   samp.webhub.* XML-RPC calls:
-      Each such call is collected and recorded by the hostname of the
-      HTTP request.  It is dispensed to a hub from the same hostname
-      on request (by a samp.tlsfwd.pullCalls).
-      When the corresponding samp.tlsfwd.receiveResult (matched by callTag)
-      is received, the result is returned (synchronously) as the
-      result of this XML-RPC call.
+   samp.tlshub.* XML-RPC calls:
+      Each such call is collected and the callTag recorded.
+      If the callTag is identical to that of another call also being
+      processed, the relay SHOULD respond with an XML-RPC Fault.
 
-      These calls are identical to the Hub API for the Web Profile,
-      though the relay is not required or expected to examine their
-      content at all.
+      The call is manipulated slightly so that it looks identical
+      to a Web Profile call: the first argument (callTag) is removed,
+      and the prefix is changed from "samp.tlshub." to "samp.webhub.".
+      The call's content is kept until a hub requests it by tag
+      (using a samp.tlsfwd.pullCall call), then it is serialized and
+      dispensed to that hub.
+
+      Note this request may have been made before the samp.tlshub
+      call is actually received.  The submit and collect are however
+      expected to be done at similar times, and the relay MAY expire
+      a submission or collection request with an XML-RPC Fault response
+      indicating timeout if its partner is not received within a short
+      interval.
+
+      The requesting hub is expected to be running on the same host as
+      the originator of the samp.tlshub call - the relay MAY deny
+      the request if it can determine that this is not the case.
+
+      When the corresponding (i.e. matched by callTag) call to
+      samp.tlsfwd.receiveResult is received, the result is returned
+      (synchronously) as the result of this XML-RPC call.
+      One change is made: the "samp.url-translator" entry is removed
+      from register call result maps.
+
+      That received result is expected to be running on the same host as
+      the originator of the samp.tlshub call - the relay MAY decline
+      to forward it if it can determine that this is not the case.
+
+      The samp.tlshub calls are very similar to the samp.webhub calls
+      used by the Web Profile, but the relay is not required or
+      expected to examine their content beyond removing the callTag
+      argument.
 
    samp.tlsfwd.* XML-RPC calls:
       ping():
          Any non-error response indicates relay is running
 
-      list pullCalls(string timeoutSec):
-         Long poll for pending relayed calls.
+      map pullCall(string callTag, string timeoutSec):
+         Retrieve a named relayed call.
 
-         The relay must return a serialization of all calls
-         submitted so far (and not previously returned by a previous
-         invocation of this method) by the same host as is performing
-         this call.  The host is identified directly from the incoming
-         HTTP request in both cases.
-
-         timeoutSec is a SAMP integer giving the maximum wait time
+         The relay must return, when available, a serialization of
+         a hub call made to it.  The call will have had an XML-RPC
+         methodName with the prefix "samp.tlshub." and its first
+         argument will have been callTag.  If no such call has yet
+         been received by the relay, it will wait for at least
+         timeoutSec seconds for that to happen; if it doesn't
+         get such a call by then, it will return an empty map.
+         The named call may only be thus retrieved once.
+        
+         timeoutSec is a SAMP int giving the maximum wait time
          in seconds.
 
-         The return value is a (possibly empty) list of maps,
-         each representing an XML-RPC call from the SAMP hub API,
+         The return value is a (possibly empty) map representing
+         an XML-RPC call from the SAMP Web Profile hub API,
          to be executed by the hub (cf. REC-SAMP-1.3 sec 5.2.5).
 
-         Each map represents a submitted samp.webhub.* call, with keys:
+         Each map represents a submitted samp.tlshub.* call, with keys:
              samp.methodName
-                XML-RPC method name as received
+                XML-RPC method name
+                (as received, but with prefix changed from samp.webhub.
+                 to samp.tlshub.)
              samp.params
-                XML-RPC parameter list as received
-             samp.callTag
-                unique identifier for call, used to associate this call
-                with a later response, generated by relay.
+                XML-RPC parameter list
+                (as received, but with first (callTag) parameter removed)
              samp.referer
                 content of HTTP "Referer" header accompanying submitted
                 XML-RPC request
 
       receiveResult(string callTag, map result):
-         Receives results of XML-RPC hub API calls previously dispensed
-         by the pullCalls method.
+         Receives the result of an XML-RPC hub API call previously
+         dispensed by the pullCall method.
 
          The relay expects to receive exactly one receiveResult call
-         for each item in the pullCalls list it has dispensed,
+         for each item it has dispensed using pullCall,
          though it may time out after a long time if none is received.
 
          The callTag parameter is that from a previously dispensed call.
+
          The result parameter is a map, with keys:
              samp.value:
                 return value of the method, if success
@@ -96,29 +139,30 @@ TLS Profile Hub:
 
    Services requests of the form GET /nudge?param=value&param=value&...
 
-   If one of the parameters is "relay":
-      Treat the corresponding value as the URL of a TLS profile Relay.
-      Ignore any other parameters.  The synchronous HTTP response is
-      200 with a small image, possibly indicating some activity.
+   If it has parameter "relay":
+      Treat the relay value as the URL of a TLS profile Relay,
+      and the value of the (required) parameter "callTag" as the
+      tag of an XML-RPC call considered to have been recently
+      passed to the relay.  Ignore any other parameters.
+      The synchronous HTTP response is 200 with a small image,
+      possibly indicating some activity.
+      (If the callTag parameter is missing, the HTTP response is 400).
 
-      Asynchronously invoke pullCalls on the relay at that URL to
-      obtain any calls that are pending now or within a few seconds
-      after now.  Service all those pending calls and return the
-      results to the Relay using the Relay XML-RPC API.
+      Asynchronously invoke pullCall(callTag, ...) on the relay at
+      the given relay URL to the named call.  Service that call,
+      and return the results to the Relay using the Relay XML-RPC API
+      (samp.tlsfwd.receiveResult).
 
       Servicing the calls should be done in the same way as for the
-      Web Profile, except that the information displayed to be displayed
+      Web Profile, except that the information to be displayed
       during user confirmation of registration (REC-SAMP-1.3 sec 5.4.2.2)
       should include the identity of the hub relay from which the
       registration request was retrieved, as well as the content of
       the samp.referer header included in that serialised call.
  
-   If there are no parameters:
+   If there is no parameter "relay":
       The synchronous HTTP response is 200 with a small image,
       possibly indicating no activity.
-
-   If there are parameters but none of them is "relay":
-      The synchronous HTTP error response is 400.
 
    HTTP 200 responses:
       Should have header "Cache-Control: no-cache".

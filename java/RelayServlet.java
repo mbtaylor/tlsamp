@@ -32,10 +32,18 @@ public class RelayServlet extends HttpServlet {
     private SampXmlRpcHandler receiveHandler_;
     private SampXmlRpcHandler dispenseHandler_;
     private DocumentBuilderFactory dbFact_;
+    private final boolean checkHostnames_;
     private static final String RELAY_ATTNAME =
         XmlRpcRelay.class.getName();
     private static final String DBFACT_ATTNAME =
         RelayServlet.class.getName() + ".dbfact";
+
+    /**
+     * Constructor.
+     */
+    public RelayServlet() {
+        checkHostnames_ = true;
+    }
 
     @Override
     public void init( ServletConfig config ) throws ServletException {
@@ -47,7 +55,7 @@ public class RelayServlet extends HttpServlet {
         // However, I'm not sure where to do that, and doing it like this
         // is at least transparent.
         if ( context.getAttribute( RELAY_ATTNAME ) == null ) {
-            new RelayContextInitializer()
+            new RelayContextInitializer( checkHostnames_ )
                .contextInitialized( new ServletContextEvent( context ) );
         }
 
@@ -141,10 +149,12 @@ public class RelayServlet extends HttpServlet {
      * Returns an XmlRpcRelay object suitable for use with this servlet
      * implementation.
      *
+     * @param   checkHostnames  whether to check matched hostname between
+     *                          submitter and servicer
      * @return  new relay
      */
-    private static XmlRpcRelay createRelay() {
-        return new XmlRpcRelay( new Random() ) {
+    private static XmlRpcRelay createRelay( boolean checkHostnames ) {
+        return new XmlRpcRelay( checkHostnames ) {
             public String getHostName( Object reqObj ) {
                 if ( reqObj instanceof HttpServletRequest ) {
 
@@ -181,9 +191,14 @@ public class RelayServlet extends HttpServlet {
      */
     private static class RelayContextInitializer
             implements ServletContextListener {
+        private final boolean checkHostnames_;
+        RelayContextInitializer( boolean checkHostnames ) {
+            checkHostnames_ = checkHostnames;
+        }
         public void contextInitialized( ServletContextEvent evt ) {
             ServletContext context = evt.getServletContext();
-            context.setAttribute( RELAY_ATTNAME, createRelay() );
+            context.setAttribute( RELAY_ATTNAME,
+                                  createRelay( checkHostnames_ ) );
             context.setAttribute( DBFACT_ATTNAME,
                                   DocumentBuilderFactory.newInstance() );
         }
