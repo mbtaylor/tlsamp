@@ -12,6 +12,7 @@ import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,7 @@ import java.util.logging.Logger;
 import org.astrogrid.samp.DataException;
 import org.astrogrid.samp.SampUtils;
 import org.astrogrid.samp.client.ClientProfile;
+import org.astrogrid.samp.client.SampException;
 import org.astrogrid.samp.httpd.HttpServer;
 import org.astrogrid.samp.hub.HubProfile;
 import org.astrogrid.samp.hub.KeyGenerator;
@@ -68,6 +70,7 @@ public class TlsHubProfile implements HubProfile {
     public static final String CALLTAG_PARAM = "callTag";
     public static final String COLLECTOR_PREFIX = "samp.tlshub.";
     public static final String DISPENSER_PREFIX = "samp.tlsfwd.";
+    public static final String REFERER_KEY = "samp.referer";
     private static final int TIMEOUT_SEC = 10;
 
     /**
@@ -96,7 +99,7 @@ public class TlsHubProfile implements HubProfile {
     public TlsHubProfile() {
         this( NUDGE_PORT,
               new HubSwingClientAuthorizer( null,
-                                            TlsAuthHeaderControl.INSTANCE ),
+                                            TlsCredentialPresenter.INSTANCE ),
               ListMessageRestriction.DEFAULT,
               XmlRpcKit.getInstance().getClientFactory(),
               new KeyGenerator( "tls:", 24, KeyGenerator.createRandom() ) );
@@ -278,52 +281,16 @@ public class TlsHubProfile implements HubProfile {
      *
      * @param  xClient   XML-RPC client for communicating with relay
      * @param  callTag   tag by which the serialized call was requested
-     * @param  call     call object to be processed
+     * @param  tlsCall     call object to be processed
      * @param  relayUrl   URL at which the hub relay resides
      */
     private void handleCall( SampXmlRpcClient xClient, String callTag,
                              SampCall call, URL relayUrl ) {
-        String tlsMethodName = call.getMethodName();
-        if ( tlsMethodName == null ||
-             ! tlsMethodName.startsWith( COLLECTOR_PREFIX ) ) {
-            logger_.info( "Ignoring unexpected collected call "
-                        + tlsMethodName );
-        }
-        String baseMethodName =
-            tlsMethodName.substring( COLLECTOR_PREFIX.length() );
-        String webMethodName =
-            WebClientProfile.WEBSAMP_HUB_PREFIX + baseMethodName;
-        String callStr = baseMethodName + " " + callTag;
-        logger_.info( "Handling relayed call " + callStr );
-
-        // Do the local processing that services the serialized call.
-        // We transform the call to the corresponding Web Profile API call,
-        // use a WebProfile handler, and then transform the result back
-        // from the Web Profile API.  The differences are very small.
-        SampResult result;
-        if ( wxHandler_.canHandleCall( webMethodName ) ) {
-            List params = new ArrayList( call.getParams() );
-            Object tagParam = params.size() > 0 ? params.remove( 0 ) : null;
-            if ( ! callTag.equals( tagParam ) ) {
-                logger_.warning( "Call tag mismatch for " + baseMethodName
-                               + ": " + tagParam + " != " + callTag );
-            }
-            HttpServer.Request fakeRequest =
-                createFakeRequest( call, relayUrl );
-            try {
-                Object webOutput =
-                    wxHandler_.handleCall( webMethodName, params, fakeRequest );
-                Object tlsOutput = webToTlsOutput( baseMethodName, webOutput );
-                result = SampResult.createSuccessResult( tlsOutput );
-            }
-            catch ( Throwable e ) {
-                result = SampResult.createErrorResult( e.toString() );
-            }
-        }
-        else {
-            result = SampResult
-                    .createErrorResult( "Unknown method " + callStr );
-        }
+        String callStr =
+              call.getMethodName().replaceFirst( COLLECTOR_PREFIX, "" )
+            + " " + callTag;
+        logger_.info( "Handling call: " + callStr );
+        SampResult result = getCallResult( callTag, call, relayUrl );
         logger_.info( "Got result "
                     + ( result.containsKey( "samp.value" ) ? "success"
                                                            : "error" )
@@ -342,6 +309,109 @@ public class TlsHubProfile implements HubProfile {
     }
 
     /**
+     * Does the local processing that services the serialized call,
+     * and return the corresponding serialized result.
+     *
+     * @param  callTag   tag by which the serialized call was requested
+     * @param  tlsCall    call object to be processed, expected to
+     *                    have a samp.tlshub.* methodName
+     * @param  relayUrl   URL at which the hub relay resides
+     * @return   serialized result object, for success or error
+     */
+    private SampResult getCallResult( String callTag, SampCall tlsCall,
+                                      URL relayUrl ) {
+
+        // We transform the call to the corresponding Web Profile API call,
+        // use a WebProfile handler, and then transform the result back
+        // from the Web Profile API.  The differences are pretty small.
+        SampCall webCall;
+        try {
+            webCall = tlsToWebCall( callTag, tlsCall, relayUrl );
+        }
+        catch ( Throwable e ) {
+            return SampResult
+                  .createErrorResult( "Bad call " + tlsCall.getMethodName()
+                                    + ": " + e );
+        }
+        String webMethodName = webCall.getMethodName();
+        List webParams = webCall.getParams();
+        HttpServer.Request fakeRequest =
+            new HttpServer.Request( null, null, new HashMap(), null, null );
+        if ( wxHandler_.canHandleCall( webMethodName ) ) {
+            try {
+                Object webOutput =
+                    wxHandler_.handleCall( webMethodName, webParams,
+                                           fakeRequest );
+                Object tlsOutput = webToTlsOutput( webMethodName, webOutput );
+                return SampResult.createSuccessResult( tlsOutput );
+            }
+            catch ( Throwable e ) {
+                return SampResult.createErrorResult( e.toString() );
+            }
+        }
+        else {
+            return SampResult.createErrorResult( "Unknown method "
+                                               + tlsCall.getMethodName() );
+        }
+    }
+
+    /**
+     * Converts a serialized call object from a samp.webhub.* (Web Profile)
+     * call to the corresponding samp.tlshub.* (TLS Profile) call.
+     * In most cases, the changes are quite minimal; this method does
+     * not (need to) know much about the details of either API.
+     *
+     * @param  callTag   tag by which the serialized call was requested
+     * @param  tlsCall    call object to be processed, expected to
+     *                    have a samp.tlshub.* methodName
+     * @param  relayUrl   URL at which the hub relay resides
+     * @return   serialized call with a samp.webhub.* methodName
+     */
+    private static SampCall tlsToWebCall( String callTag, SampCall tlsCall,
+                                          URL relayUrl ) throws SampException {
+
+        // Modify prefix.
+        String tlsMethodName = tlsCall.getMethodName();
+        if ( tlsMethodName == null ||
+             ! tlsMethodName.startsWith( COLLECTOR_PREFIX ) ) {
+            throw new SampException( "Ignoring unexpected collected call "
+                                   + tlsMethodName );
+        }
+        String baseMethodName =
+            tlsMethodName.substring( COLLECTOR_PREFIX.length() );
+        String webMethodName =
+            WebClientProfile.WEBSAMP_HUB_PREFIX + baseMethodName;
+
+        // Remove first parameter, and check if it matches callTag.
+        List tlsParams = tlsCall.getParams();
+        if ( tlsParams.size() == 0 ) {
+            throw new SampException( "No call tag" );
+        }
+        Object tagParam = tlsParams.get( 0 );
+        if ( ! callTag.equals( tagParam ) ) {
+            logger_.warning( "Call tag mismatch for " + baseMethodName
+                           + ": " + tagParam + " != " + callTag );
+        }
+        List webParams =
+            new ArrayList( tlsParams.subList( 1, tlsParams.size() ) );
+
+        // Treat register call specially.
+        if ( "register".equals( baseMethodName ) ) {
+            if ( webParams.size() > 0 && webParams.get( 0 ) instanceof Map ) {
+                Map securityMap = new LinkedHashMap( (Map) webParams.get( 0 ) );
+                if ( relayUrl != null ) {
+                    securityMap.put( TlsCredentialPresenter.RELAY_KEY,
+                                     relayUrl.toString() );
+                }
+                webParams.set( 0, securityMap );
+            }
+        }
+
+        // Return the result.
+        return new SampCall( webMethodName, webParams );
+    }
+
+    /**
      * Converts the output of a Web Profile hub API method to the output
      * of the corresponding TLS Profile hub API method.
      * In most cases, the changes are very slight.
@@ -354,7 +424,8 @@ public class TlsHubProfile implements HubProfile {
      */
     private static Object webToTlsOutput( String baseMethodName,
                                           Object webOutput ) {
-        if ( "register".equals( baseMethodName ) &&
+        if ( ( WebClientProfile.WEBSAMP_HUB_PREFIX + "register")
+            .equals( baseMethodName ) &&
              webOutput instanceof Map ) {
             Map map = new LinkedHashMap( (Map) webOutput );
             map.remove( WebClientProfile.URLTRANS_KEY );
@@ -363,28 +434,6 @@ public class TlsHubProfile implements HubProfile {
         else {
             return webOutput;
         }
-    }
-
-    /**
-     * Returns a dummy HttpServer.Request object.
-     *
-     * @param   call  call from which request is supposed to have come
-     * @parma   relayUrl   URL of hub relay
-     * @return   fake request object
-     */
-    private static HttpServer.Request createFakeRequest( SampCall call,
-                                                         URL relayUrl ) {
-        Map fakeHeaderMap = new LinkedHashMap();
-        if ( relayUrl != null ) {
-            fakeHeaderMap.put( TlsAuthHeaderControl.RELAY_HDR,
-                               relayUrl.toString() );
-        }
-        Object referer = call.get( SampCall.REFERER_KEY );
-        if ( referer instanceof String ) {
-            fakeHeaderMap.put( TlsAuthHeaderControl.REFERER_HDR,
-                               (String) referer );
-        }
-        return new HttpServer.Request( null, null, fakeHeaderMap, null, null );
     }
 
     /**

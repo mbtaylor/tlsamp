@@ -3,7 +3,7 @@ JSRC = \
        java/ImageResponse.java \
        java/SampCall.java \
        java/SampResult.java \
-       java/TlsAuthHeaderControl.java \
+       java/TlsCredentialPresenter.java \
        java/TlsHub.java \
        java/TlsHubProfile.java \
        java/XmlRpcRelay.java \

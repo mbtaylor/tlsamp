@@ -118,9 +118,12 @@ Relay:
                 XML-RPC method name (as received)
              samp.params
                 XML-RPC parameter list (as received, including callTag)
-             samp.referer
-                content of HTTP "Referer" header accompanying submitted
-                XML-RPC request
+
+         The relay must also treat the samp.tlshub.register call specially:
+         it should add a "samp.referer" entry to the first (identity-info)
+         parameter, whose value is the content of the "Referer" header
+         of the HTTP request from which the original XML-RPC call came
+         (see RFC2616 sec 14.36).
 
       receiveResult(string callTag, map result):
          Receives the result of an XML-RPC hub API call previously

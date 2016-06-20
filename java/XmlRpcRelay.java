@@ -44,6 +44,9 @@ public abstract class XmlRpcRelay {
     private static final Logger logger_ =
         Logger.getLogger( XmlRpcRelay.class.getName() );
 
+    /** See RFC2616, sec 14.36. */
+    private static final String REFERER_HDR = "Referer";
+
     /**
      * Constructor.
      *
@@ -138,15 +141,27 @@ public abstract class XmlRpcRelay {
             }
             String callTag = (String) params.get( 0 );
 
+            // Get convenient reference for user messages.
+            String callStr = methodName
+                            .replaceFirst( TlsHubProfile.COLLECTOR_PREFIX, "" )
+                             + " " + callTag;
+
             // Construct a SampCall object corresponding to this submission.
             SampCall call = new SampCall( methodName, params );
 
-            // Store additional call metadata.
-            String referer = getHeader( reqInfo,
-                                        TlsAuthHeaderControl.REFERER_HDR );
-            if ( referer != null ) {
-                call.put( SampCall.REFERER_KEY, referer );
+            // Treat register call specially. */
+            if ( ( TlsHubProfile.COLLECTOR_PREFIX + "register" )
+                .equals( methodName ) &&
+                 params.size() > 1 &&
+                 params.get( 1 ) instanceof Map ) {
+                Map securityMap = (Map) params.get( 1 );
+                String referer = getHeader( reqInfo, REFERER_HDR );
+                if ( referer != null ) {
+                    securityMap.put( TlsHubProfile.REFERER_KEY, referer );
+                }
             }
+
+            // Store hostname if required.
             if ( checkHostnames_ ) {
                 String hostname = getHostName( reqInfo );
                 if ( hostname != null ) {
@@ -156,11 +171,8 @@ public abstract class XmlRpcRelay {
                     throw new SampException( "Can't determine hostname" );
                 }
             }
-            String callStr = methodName
-                            .replaceFirst( TlsHubProfile.COLLECTOR_PREFIX, "" )
-                             + " " + callTag;
 
-            // Store it for later retrieval, indexed by its tag.
+            // Store the call for later retrieval, indexed by its tag.
             boolean isUnique = ! dispenseHandler_.hasTag( callTag )
                             && callStore_.putNew( callTag, call );
             if ( ! isUnique ) {
