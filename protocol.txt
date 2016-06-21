@@ -21,6 +21,7 @@ Web application:
    "samp.tlshub." instead of "samp.webhub.", and each call takes
    an additional string argument, callTag, prepended to the argument list.
    This call tag SHOULD be globally unique and unguessable.
+
    Whenever such a call is made, the web-app additionally requests
    an image (by manipulating the src attribute of an HTML IMG element)
    with the URL:
@@ -36,7 +37,19 @@ Web application:
       showing an image, e.g. as part of a service to count page views,
       use an empty alt attribute.
 
+   This usage is somewhat contrary to conventional HTTP GET semantics,
+   as noted in RFC2616 section 9.1.1:
+
+      9.1.1 Safe Methods
+      ...
+      In particular, the convention has been established that the
+      GET and HEAD methods SHOULD NOT have the significance of
+      taking an action other than retrieval.
+
+   But such violations are not uncommon.
+
    URL translation (REC-SAMP-1.3 sec 5.2.6): doesn't work.
+
 
 Relay:
 ------
