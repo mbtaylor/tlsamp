@@ -1,14 +1,12 @@
 package org.astrogrid.samp.tls;
 
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
 import java.net.ServerSocket;
 import java.net.SocketAddress;
 import java.net.URL;
-import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -166,8 +164,8 @@ public class TlsHubProfile implements HubProfile {
                 return CorsHttpServer.createNonLocalErrorResponse( request );
             }
             String method = request.getMethod();
-            ParsedUrl pu = new ParsedUrl( request.getUrl() );
-            String path = pu.path_;
+            NudgeParsedUrl pu = new NudgeParsedUrl( request.getUrl() );
+            String path = pu.getPath();
             final URL relayUrl = pu.getRelayUrl();
             final String callTag = pu.getCallTag();
             if ( NUDGE_PATH.equals( path ) ) {
@@ -437,46 +435,17 @@ public class TlsHubProfile implements HubProfile {
     }
 
     /**
-     * Makes sense of a partial URL with parameters.
+     * Makes sense of a nudge URL.
      */
-    private static class ParsedUrl {
-        final String path_;
-        private final Map<String,String> params_;
-        private static final String ENC = "UTF-8";
+    private static class NudgeParsedUrl extends ParsedUrl {
 
         /**
          * Constructor.
          *
          * @param   localPart   local part of URL
          */
-        ParsedUrl( String localPart ) {
-            int iq = localPart.indexOf( '?' ); 
-            final String query;
-            if ( iq >= 0 ) {
-                path_ = urlDecode( localPart.substring( 0, iq ) );
-                query = localPart.substring( iq + 1 );
-            }
-            else {
-                path_ = localPart;
-                query = "";
-            }
-            params_ = new LinkedHashMap<String,String>();
-            if ( query.trim().length() > 0 ) {
-                for ( String paramPart : query.split( "&" ) ) {
-                    int ie = paramPart.indexOf( '=' );
-                    final String key;
-                    final String value;
-                    if ( ie >= 0 ) {
-                        key = paramPart.substring( 0, ie );
-                        value = paramPart.substring( ie + 1 );
-                    }
-                    else {
-                        key = paramPart;
-                        value = "";
-                    }
-                    params_.put( urlDecode( key ), urlDecode( value ) );
-                }
-            }
+        NudgeParsedUrl( String localPart ) {
+            super( localPart );
         }
 
         /**
@@ -486,7 +455,7 @@ public class TlsHubProfile implements HubProfile {
          * @return   remote URL for message retrieval, or null
          */
         URL getRelayUrl() {
-            String relayUrl = params_.get( RELAYURL_PARAM );
+            String relayUrl = getParams().get( RELAYURL_PARAM );
             if ( relayUrl == null ) {
                 return null;
             }
@@ -506,7 +475,7 @@ public class TlsHubProfile implements HubProfile {
          * @return  call tag
          */
         String getCallTag() {
-            return params_.get( CALLTAG_PARAM );
+            return getParams().get( CALLTAG_PARAM );
         }
 
         /**
@@ -516,24 +485,7 @@ public class TlsHubProfile implements HubProfile {
          * @return  true if this is an initialisation call
          */
         public boolean isInit() {
-            return ! params_.containsKey( RELAYURL_PARAM );
-        }
-
-        /**
-         * Decodes text.
-         *
-         * @param   txt  input string
-         * @return   unescaped text
-         */
-        private static final String urlDecode( String txt ) {
-            String encoding = "UTF-8";
-            try {
-                return URLDecoder.decode( txt, encoding );
-            }
-            catch ( UnsupportedEncodingException e ) {
-                logger_.warning( "Unsupported encoding " + encoding + "???" );
-                return txt;
-            }
+            return ! getParams().containsKey( RELAYURL_PARAM );
         }
     }
 }

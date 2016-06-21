@@ -8,6 +8,7 @@ JSRC = \
        java/TlsHubProfile.java \
        java/XmlRpcRelay.java \
        java/BlockingStore.java \
+       java/ParsedUrl.java \
        java/RelayServlet.java \
        java/StandaloneServer.java \
 
