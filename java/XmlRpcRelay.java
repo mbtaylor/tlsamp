@@ -151,6 +151,36 @@ public class XmlRpcRelay {
     }
 
     /**
+     * Wait until an entry with a given key has appeared in a map.
+     * The map must be managed such that map.notifyAll() is called when
+     * the relevant entry may have been updated.
+     *
+     * @param  map   map
+     * @param  key   key to look out for
+     * @param  timeoutMillis  maximum wait time in milliseconds
+     * @return   value corresponding to <code>key</code>,
+     *           or null in case of timeout
+     */
+    private static Object waitForEntry( Map map, String key,
+                                        long timeoutMillis )
+            throws InterruptedException {
+        long end = System.currentTimeMillis() + timeoutMillis;
+        synchronized( map ) {
+            while ( true ) {
+                Object value = map.get( key );
+                if ( value != null ) {
+                    return value;
+                }
+                long remainingTime = end - System.currentTimeMillis();
+                if ( remainingTime <= 0 ) {
+                    return null;
+                }
+                map.wait( remainingTime );
+            }
+        }
+    }
+
+    /**
      * Handler implementation for the receiver endpoint.
      */
     private class ReceiveHandler implements SampXmlRpcHandler {
@@ -214,36 +244,6 @@ public class XmlRpcRelay {
             }
             else {
                 throw new SampException( result.getError() );
-            }
-        }
-    }
-
-    /**
-     * Wait until an entry with a given key has appeared in a map.
-     * The map must be managed such that map.notifyAll() is called when
-     * the relevant entry may have been updated.
-     *
-     * @param  map   map
-     * @param  key   key to look out for
-     * @param  timeoutMillis  maximum wait time in milliseconds
-     * @return   value corresponding to <code>key</code>,
-     *           or null in case of timeout
-     */
-    private static Object waitForEntry( Map map, String key,
-                                        long timeoutMillis )
-            throws InterruptedException {
-        long end = System.currentTimeMillis() + timeoutMillis;
-        synchronized( map ) {
-            while ( true ) {
-                Object value = map.get( key );
-                if ( value != null ) {
-                    return value;
-                }
-                long remainingTime = end - System.currentTimeMillis();
-                if ( remainingTime <= 0 ) {
-                    return null;
-                }
-                map.wait( remainingTime );
             }
         }
     }
@@ -343,15 +343,11 @@ public class XmlRpcRelay {
                     throw new SampException( "Wrong params for " + fqName
                                            + "(string callTag, map result)" );
                 }
-                if ( checkHostnames_ ) {
-                    String hostname = reqFormat_.getHostName( reqInfo );
-                    if ( hostname == null ) {
-                        throw new SampException( "Can't determine hostname" );
-                    }
-                }
+                String hostname =
+                    checkHostnames_ ? reqFormat_.getHostName( reqInfo ) : null;
                 String callTag = (String) params.get( 0 );
                 Map result = (Map) params.get( 1 );
-                receiveResult( callTag, result );
+                receiveResult( callTag, result, hostname );
                 retval = null;
             }
 
@@ -371,19 +367,16 @@ public class XmlRpcRelay {
          * @param   callTag  unique token by which the call identified itself
          * @param   result   SAMP-friendly representation of XML-RPC call
          *                   return value
+         * @param   reqHostname  hostname associated with this receive request
          */
-        public void receiveResult( String callTag, Map result )
+        private void receiveResult( String callTag, Map result,
+                                    String reqHostname )
                 throws SampException, InterruptedException {
-            SampCall call = dispensedCalls_.remove( callTag );
-            if ( call != null ) {
-                synchronized ( call ) {
-                    call.put( RESULT_KEY, result );
-                    call.notifyAll();
-                }
-            }
-            else {
-                throw new SampException( "receiveResult failed for phantom tag "
-                                       + callTag );
+            SampCall call =
+                dispenseHandler_.takeDispensedCall( callTag, reqHostname );
+            synchronized ( call ) {
+                call.put( RESULT_KEY, result );
+                call.notifyAll();
             }
         }
 
@@ -396,6 +389,44 @@ public class XmlRpcRelay {
          */
         boolean hasTag( String callTag ) {
             return dispensedCalls_.containsKey( callTag );
+        }
+
+        /**
+         * Retrieves call object from the map of calls that have been
+         * dispensed.  This method removes the object from the map.
+         *
+         * @param   callTag  key under which the call has been stored
+         * @param   requestHostname   the name of the host from which the
+         *             request came that occasioned the invocation of this
+         *             method; may be checked against the hostname associated
+         *             with creation of the call object
+         * @return   call object, not null
+         * @return  SampException  if there is no such call, or something
+         *                         else goes wrong
+         */
+        SampCall takeDispensedCall( String callTag, String requestHostname )
+                throws SampException {
+            SampCall call = dispensedCalls_.remove( callTag );
+            if ( call == null ) {
+                throw new SampException( "unknown callTag " + callTag );
+            }
+            if ( checkHostnames_ ) {
+                Object callHostnameObj = call.get( HOSTNAME_KEY );
+                if ( ! ( callHostnameObj instanceof String ) ) {
+                   throw new SampException( "Unexpected type for call hostname"
+                                          + " - relay bug?" );
+                }
+                String callHostname = (String) callHostnameObj;
+                if ( requestHostname == null ) {
+                    throw new SampException( "Can't determine hostname" );
+                }
+                else if ( ! requestHostname.equals( callHostname ) ) {
+                    throw new SampException( "Hostname mismatch: "
+                                           + requestHostname + " != "
+                                           + callHostname );
+                }
+            }
+            return call;
         }
     }
 }
