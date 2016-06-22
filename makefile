@@ -9,6 +9,7 @@ JSRC = \
        java/XmlRpcRelay.java \
        java/BlockingStore.java \
        java/ParsedUrl.java \
+       java/HttpRequestFormat.java \
        java/RelayServlet.java \
        java/StandaloneServer.java \
 

@@ -31,8 +31,9 @@ import org.astrogrid.samp.xmlrpc.SampXmlRpcHandler;
  * @author   Mark Taylor
  * @since    14 Mar 2016
  */
-public abstract class XmlRpcRelay {
+public class XmlRpcRelay {
 
+    private final HttpRequestFormat reqFormat_;
     private final boolean checkHostnames_;
     private final int collectMaxWaitSec_;
     private final int resultMaxWaitSec_;
@@ -50,10 +51,12 @@ public abstract class XmlRpcRelay {
     /**
      * Constructor.
      *
+     * @param  reqFormat  understands HTTP request objects
      * @param  checkHostnames  if true, ensure that the submitter and servicer
      *                         are on the same host for each named call
      */
-    public XmlRpcRelay( boolean checkHostnames ) {
+    public XmlRpcRelay( HttpRequestFormat reqFormat, boolean checkHostnames ) {
+        reqFormat_ = reqFormat;
         checkHostnames_ = checkHostnames;
         collectMaxWaitSec_ = 10;
         resultMaxWaitSec_ = 600;
@@ -86,33 +89,6 @@ public abstract class XmlRpcRelay {
     public SampXmlRpcHandler getDispenseHandler() {
         return dispenseHandler_;
     }
-
-    /**
-     * Returns a host identifier string given a request object.
-     *
-     * <p>The request object is the final parameter passed to the
-     * {@link org.astrogrid.samp.xmlrpc.SampXmlRpcHandler#handleCall handleCall
-     * method; its nature depends on the XmlRpc implementation within
-     * which this relay is being harnessed.
-     *
-     * @param  reqInfo   information about an HTTP request
-     * @return  hostname of request originator
-     */
-    public abstract String getHostName( Object reqInfo );
-
-    /**
-     * Returns the value of an HTTP header, if known, given a request object.
-     *
-     * <p>The request object is the final parameter passed to the
-     * {@link org.astrogrid.samp.xmlrpc.SampXmlRpcHandler#handleCall handleCall}
-     * method; its nature depends on the XmlRpc implementation within
-     * which this relay is being harnessed.
-     *
-     * @param  reqInfo  information about an HTTP request
-     * @param  headerName   name of HTTP header, case insensitive
-     * @return  value for given header in request, or null if not present
-     */
-    public abstract String getHeader( Object reqInfo, String headerName );
 
     /**
      * Handler implementation for the receiver endpoint.
@@ -155,7 +131,7 @@ public abstract class XmlRpcRelay {
                  params.size() > 1 &&
                  params.get( 1 ) instanceof Map ) {
                 Map securityMap = (Map) params.get( 1 );
-                String referer = getHeader( reqInfo, REFERER_HDR );
+                String referer = reqFormat_.getHeader( reqInfo, REFERER_HDR );
                 if ( referer != null ) {
                     securityMap.put( TlsHubProfile.REFERER_KEY, referer );
                 }
@@ -163,7 +139,7 @@ public abstract class XmlRpcRelay {
 
             // Store hostname if required.
             if ( checkHostnames_ ) {
-                String hostname = getHostName( reqInfo );
+                String hostname = reqFormat_.getHostName( reqInfo );
                 if ( hostname != null ) {
                     call.put( HOSTNAME_KEY, hostname );
                 }
@@ -302,8 +278,9 @@ public abstract class XmlRpcRelay {
                 int timeoutMillis =
                     SampUtils.decodeInt( (String) params.get( 1 ) ) * 1000;
 
-                String reqHostname = checkHostnames_ ? getHostName( reqInfo )
-                                                     : null;
+                String reqHostname = checkHostnames_
+                                   ? reqFormat_.getHostName( reqInfo )
+                                   : null;
                 if ( checkHostnames_ && reqHostname == null ) {
                     throw new SampException( "Can't determine hostname" );
                 }
@@ -338,7 +315,7 @@ public abstract class XmlRpcRelay {
                                            + "(string callTag, map result)" );
                 }
                 if ( checkHostnames_ ) {
-                    String hostname = getHostName( reqInfo );
+                    String hostname = reqFormat_.getHostName( reqInfo );
                     if ( hostname == null ) {
                         throw new SampException( "Can't determine hostname" );
                     }

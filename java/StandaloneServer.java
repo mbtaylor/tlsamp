@@ -24,6 +24,8 @@ import org.astrogrid.samp.tls.XmlRpcRelay;
  */
 public class StandaloneServer {
 
+    private static final HttpRequestFormat reqFormat_ =
+        new StandaloneHttpRequestFormat();
     private final HttpServer hServer_;
 
     /**
@@ -56,26 +58,7 @@ public class StandaloneServer {
         if ( relayPath != null ) {
             SampXmlRpcServer xServer =
                     new InternalServer( hServer_, relayPath );
-            XmlRpcRelay relay = new XmlRpcRelay( checkHostnames ) {
-                public String getHostName( Object reqObj ) {
-                    if ( reqObj instanceof HttpServer.Request ) {
-                        SocketAddress saddr =
-                            ((HttpServer.Request) reqObj).getRemoteAddress();
-                        if ( saddr instanceof InetSocketAddress ) {
-                            InetSocketAddress naddr = (InetSocketAddress) saddr;
-                            return naddr.getHostName();
-                        }
-                    }
-                    return null;
-                }
-                public String getHeader( Object reqObj, String hdrName ) {
-                    return reqObj instanceof HttpServer.Request
-                         ? HttpServer.getHeader( ((HttpServer.Request) reqObj)
-                                                .getHeaderMap(),
-                                                 hdrName )
-                         : null;
-                }
-            };
+            XmlRpcRelay relay = new XmlRpcRelay( reqFormat_, checkHostnames );
             xServer.addHandler( relay.getReceiveHandler() );
             xServer.addHandler( relay.getDispenseHandler() );
         }
@@ -86,6 +69,33 @@ public class StandaloneServer {
      */
     public void start() {
         hServer_.start();
+    }
+
+    /**
+     * HttpRequestFormat implementation for JSAMP internal HTTP server.
+     */
+    private static class StandaloneHttpRequestFormat
+            implements HttpRequestFormat {
+
+        public String getHostName( Object reqObj ) {
+            if ( reqObj instanceof HttpServer.Request ) {
+                SocketAddress saddr =
+                    ((HttpServer.Request) reqObj).getRemoteAddress();
+                if ( saddr instanceof InetSocketAddress ) {
+                    InetSocketAddress naddr = (InetSocketAddress) saddr;
+                    return naddr.getHostName();
+                }
+            }
+            return null;
+        }
+
+        public String getHeader( Object reqObj, String hdrName ) {
+            return reqObj instanceof HttpServer.Request
+                 ? HttpServer.getHeader( ((HttpServer.Request) reqObj)
+                                        .getHeaderMap(),
+                                         hdrName )
+                 : null;
+        }
     }
 
     /**

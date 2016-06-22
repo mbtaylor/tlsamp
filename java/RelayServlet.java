@@ -29,6 +29,8 @@ import org.w3c.dom.Document;
  */
 public class RelayServlet extends HttpServlet {
 
+    private static final HttpRequestFormat reqFormat_ =
+        new ServletHttpRequestFormat();
     private SampXmlRpcHandler receiveHandler_;
     private SampXmlRpcHandler dispenseHandler_;
     private DocumentBuilderFactory dbFact_;
@@ -146,39 +148,34 @@ public class RelayServlet extends HttpServlet {
     }
 
     /**
-     * Returns an XmlRpcRelay object suitable for use with this servlet
-     * implementation.
-     *
-     * @param   checkHostnames  whether to check matched hostname between
-     *                          submitter and servicer
-     * @return  new relay
+     * HttpRequestFormat implementation for servlet framework.
      */
-    private static XmlRpcRelay createRelay( boolean checkHostnames ) {
-        return new XmlRpcRelay( checkHostnames ) {
-            public String getHostName( Object reqObj ) {
-                if ( reqObj instanceof HttpServletRequest ) {
+    private static class ServletHttpRequestFormat implements HttpRequestFormat {
 
-                    // We need to return the host name for the host at which
-                    // the XML-RPC request originated.  Pull it out from
-                    // the incoming HttpServletRequest object.
-                    // That sounds OK, but there may be a problem -
-                    // if the request has been through an HTTP proxy,
-                    // this address might be the wrong one
-                    // (see ServletRequest.getRemoteAddr javadocs).
-                    // So, maybe we need to identify originating calls by
-                    // tokens explicitly inserted by clients instead.  Hmm.
-                    return ((HttpServletRequest) reqObj).getRemoteAddr();
-                }
-                else {
-                    return null;
-                }
+        public String getHostName( Object reqObj ) {
+            if ( reqObj instanceof HttpServletRequest ) {
+
+                // We need to return the host name for the host at which
+                // the XML-RPC request originated.  Pull it out from
+                // the incoming HttpServletRequest object.
+                // That sounds OK, but there may be a problem -
+                // if the request has been through an HTTP proxy,
+                // this address might be the wrong one
+                // (see ServletRequest.getRemoteAddr javadocs).
+                // So, maybe we need to identify originating calls by
+                // tokens explicitly inserted by clients instead.  Hmm.
+                return ((HttpServletRequest) reqObj).getRemoteAddr();
             }
-            public String getHeader( Object reqObj, String hdrName ) {
-                return reqObj instanceof HttpServletRequest
-                     ? ((HttpServletRequest) reqObj).getHeader( hdrName )
-                     : null;
+            else {
+                return null;
             }
-        };
+        }
+
+        public String getHeader( Object reqObj, String hdrName ) {
+            return reqObj instanceof HttpServletRequest
+                 ? ((HttpServletRequest) reqObj).getHeader( hdrName )
+                 : null;
+        }
     }
 
     /**
@@ -198,7 +195,8 @@ public class RelayServlet extends HttpServlet {
         public void contextInitialized( ServletContextEvent evt ) {
             ServletContext context = evt.getServletContext();
             context.setAttribute( RELAY_ATTNAME,
-                                  createRelay( checkHostnames_ ) );
+                                  new XmlRpcRelay( reqFormat_,
+                                                   checkHostnames_ ) );
             context.setAttribute( DBFACT_ATTNAME,
                                   DocumentBuilderFactory.newInstance() );
         }
