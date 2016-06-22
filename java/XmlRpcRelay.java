@@ -91,6 +91,66 @@ public class XmlRpcRelay {
     }
 
     /**
+     * Creates a SAMP call object, ready for serialization and dispatch to
+     * a waiting hub.
+     *
+     * @param  methodName  XML-RPC method name
+     * @param  params     XML-RPC parameter list
+     * @param  callTag   callTag associated with request
+     * @param  hostname   hostname of originating HTTP request
+     * @return  call object
+     */
+    private SampCall createCall( String methodName, List params,
+                                 String callTag, String hostname )
+            throws SampException {
+        final String callStr = methodName.replaceFirst( "^.*\\.", "" )
+                             + " " + callTag;
+        SampCall call = new SampCall( methodName, params ) {
+            @Override
+            public String toString() {
+                return callStr;
+            }
+        };
+        if ( checkHostnames_ ) {
+            if ( hostname != null ) {
+                call.put( HOSTNAME_KEY, hostname );
+            }
+            else {
+                throw new SampException( "Can't determine hostname" );
+            }
+        }
+        return call;
+    }
+
+    /**
+     * Queue a call object for dispatch to the hub, and block until the
+     * hub has taken it.  If the hub does not pick it up before a fixed
+     * timeout, a SampException is thrown.
+     *
+     * @param   call  call object to dispatch
+     * @param   callTag   call tag associated with call
+     */
+    private void dispenseCall( SampCall call, String callTag )
+            throws SampException, InterruptedException {
+
+        // Store the call for later retrieval, indexed by its tag.
+        boolean isUnique = ! dispenseHandler_.hasTag( callTag )
+                        && callStore_.putNew( callTag, call );
+        if ( ! isUnique ) {
+            throw new SampException( "Can't accept call with tag already "
+                                   + "in use: " + call );
+        }
+        logger_.info( "Queued call: " + call );
+
+        // Wait for call to be collected by servicer; fail if timeout.
+        if ( callStore_.removeUntaken( callTag, collectMaxWaitSec_ * 1000 ) ) {
+            throw new SampException( "No hub (relay timeout "
+                                   + collectMaxWaitSec_ + "sec) for " + call );
+        }
+        logger_.info( "Dispensed call: " + call );
+    }
+
+    /**
      * Handler implementation for the receiver endpoint.
      */
     private class ReceiveHandler implements SampXmlRpcHandler {
@@ -117,14 +177,6 @@ public class XmlRpcRelay {
             }
             String callTag = (String) params.get( 0 );
 
-            // Get convenient reference for user messages.
-            String callStr = methodName
-                            .replaceFirst( TlsHubProfile.COLLECTOR_PREFIX, "" )
-                             + " " + callTag;
-
-            // Construct a SampCall object corresponding to this submission.
-            SampCall call = new SampCall( methodName, params );
-
             // Treat register call specially. */
             if ( ( TlsHubProfile.COLLECTOR_PREFIX + "register" )
                 .equals( methodName ) &&
@@ -137,45 +189,22 @@ public class XmlRpcRelay {
                 }
             }
 
-            // Store hostname if required.
-            if ( checkHostnames_ ) {
-                String hostname = reqFormat_.getHostName( reqInfo );
-                if ( hostname != null ) {
-                    call.put( HOSTNAME_KEY, hostname );
-                }
-                else {
-                    throw new SampException( "Can't determine hostname" );
-                }
-            }
+            // Construct a SampCall object corresponding to this submission.
+            SampCall call = createCall( methodName, params, callTag,
+                                        reqFormat_.getHostName( reqInfo ) );
 
-            // Store the call for later retrieval, indexed by its tag.
-            boolean isUnique = ! dispenseHandler_.hasTag( callTag )
-                            && callStore_.putNew( callTag, call );
-            if ( ! isUnique ) {
-                throw new SampException( "Can't accept call with tag already "
-                                       + "in use: " + callStr );
-            }
-            logger_.info( "Received call: " + callStr );
+            // Wait for hub to pick the call up.
+            dispenseCall( call, callTag );
 
-            // Wait for call to be collected by servicer; fail if timeout. 
-            if ( callStore_.removeUntaken( callTag,
-                                           collectMaxWaitSec_ * 1000 ) ) {
-                throw new SampException( "No hub (relay timeout "
-                                       + collectMaxWaitSec_ + "sec) for "
-                                       + callStr );
-            }
-            logger_.info( "Dispensed call: " + callStr );
-
-            // Call has been dispensed.
             // Wait for result from servicer; fail if timeout.
             Object resultObj =
                 waitForEntry( call, RESULT_KEY, resultMaxWaitSec_ * 1000 );
             if ( ! ( resultObj instanceof Map ) ) {
-                throw new SampException( "No hub response for " + callStr
+                throw new SampException( "No hub response for " + call
                                        + " (relay timeout "
                                        + resultMaxWaitSec_ + "sec)" );
             }
-            logger_.info( "Got result from call: " + callStr );
+            logger_.info( "Got result from call: " + call );
 
             // Return result value or error.
             SampResult result = SampResult.asResult( (Map) resultObj );
