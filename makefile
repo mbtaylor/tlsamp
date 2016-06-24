@@ -14,6 +14,7 @@ JSRC = \
        java/StandaloneServer.java \
 
 RESOURCES = \
+       protocol.txt \
        resources/index.html \
        resources/tlsamp.js \
        resources/spinger.html \
@@ -35,6 +36,7 @@ JAVA = java7
 JARFILE = tlsamp.jar
 TLSHUB = tlshub.jar
 WEBAPP = tlsamp
+GITVERSION = "`gitversion`"
 
 # Keystore and password for use witt the standalone server.
 # If you're not going to use it (you're using the servlet instead)
@@ -79,7 +81,7 @@ $(JARFILE): $(JSAMP_JAR) $(JSRC) $(RESOURCES) $(SERVLET_JAR)
 	rm -rf tmp
 	mkdir tmp
 	mkdir -p tmp/resources
-	for f in $(RESOURCES); do cp $$f tmp/$$f; done
+	for f in $(RESOURCES); do cp $$f tmp/resources/; done
 	javac $(JFLAGS) -classpath $(JSAMP_JAR):$(SERVLET_JAR) \
               -d tmp $(JSRC)
 	cd tmp && jar cf ../$@ . 
@@ -89,6 +91,7 @@ $(TLSHUB): $(JARFILE) $(JSAMP_JAR)
 	rm -rf tmp
 	mkdir tmp
 	echo "Main-Class: org.astrogrid.samp.tls.TlsHub" > tmp/manifest
+	echo "TLSAMP-version: "`gitversion` >>tmp/manifest
 	cd tmp && jar xf ../$(JARFILE) org && jar xf ../$(JSAMP_JAR) org
 	cd tmp && jar cmf manifest ../$@ org
 	rm -rf tmp
@@ -119,11 +122,12 @@ deploy_https: $(WEBAPP).war $(RESOURCES)
 	cp $(WEBAPP).war /usr/share/tomcat/webapps/
 	/etc/init.d/tomcat start
 
-deploy_http: $(RESOURCES) $(TLSHUB) $(WEBAPP).war deploy.html protocol.txt
+deploy_http: $(RESOURCES) $(TLSHUB) $(WEBAPP).war deploy.html
 	rm -rf $(HTTP_DIR)/examples
 	mkdir $(HTTP_DIR)/examples
 	cp $(RESOURCES) $(HTTP_DIR)/examples/
 	cp $(WEBAPP).war $(TLSHUB) protocol.txt $(HTTP_DIR)/
-	cp deploy.html $(HTTP_DIR)/index.html
+	sed -es/@gitversion@/$(GITVERSION)/g \
+            < deploy.html > $(HTTP_DIR)/index.html
 
 

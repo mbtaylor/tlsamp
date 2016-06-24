@@ -4,8 +4,58 @@
 </head>
 <body>
 
-<h2>Web SAMP for HTTP and HTTPS</h2>
+<h1>Web SAMP for HTTP and HTTPS</h1>
+
+<p>This page documents my experiments on how SAMP can be used
+from a Web Application served from an HTTPS, rather than HTTP,
+web page (I'm tentatively calling this the TLS Profile or tlsamp).
+This is not straightforward;
+see my presentations on the topic from
+<a href="http://wiki.ivoa.net/internal/IVOA/InteropOct2015Applications/samp-https.pdf"
+   >Sydney</a>,
+<a href="https://www.asterics2020.eu/dokuwiki/lib/exe/fetch.php?media=open:wp4:tlsamp.pdf"
+   >Edinburgh</a>,
+<a href="http://wiki.ivoa.net/internal/IVOA/InterOpMay2016-GWS/tlsamp.pdf"
+   >Cape Town</a>.
+</p>
+
+<p>Below are some resources which give the results of my
+experiments to date, and some instructions on how you can try
+this out at home.
+In terms of functionality I believe it should work in the same
+way as the existing Web Profile,
+except (a) it will be slower (especially if you are far from
+the server) and (b) URL translation is not currently implemented,
+so you can't read data sent from desktop SAMP clients to TLS SAMP
+clients (most Web SAMP clients don't currently need to do that).
+</p>
+
+<p>It's still not clear to me whether it makes sense to incorporate all
+this into a future version of the SAMP standard.
+That depends on input from other potential deployers of SAMP-from-HTTPS.
+If that's you, I'd like to know:
+</p>
+<ol>
+<li>Can you get it working?</li>
+<li>Do you want/need to use it?</li>
+<li>Do you want/need to read incoming URLs? (not currently working)</li>
+</ol>
+<p>If you have input along these lines please contact me
+or discuss on the
+<a href="http://mail.ivoa.net/pipermail/apps/">apps@ivoa.net</a> or
+<a href="http://mail.ivoa.net/pipermail/apps-samp/">apps-samp@ivoa.net</a>
+mailing list.
+</p>
+
+<hr />
+<h2>Resources</h2>
+
 <dl>
+
+<dt><b>HTTPS-capable hub:</b></dt>
+<dd>Run <code>java -jar <a href="tlshub.jar"
+                                >tlshub.jar</a></code>
+    </dd>
 
 <dt><b>HTTP examples:</b></dt>
 <dd><a href="examples"
@@ -21,15 +71,87 @@
 <dd><a href="tlsamp.war">tlsamp.war</a>
     </dd>
 
-<dt><b>HTTPS-capable hub:</b></dt>
-<dd>Run <code>java -jar <a href="tlshub.jar"
-                                >tlshub.jar</a></code>
-    </dd>
-
 <dt><b>Description of the prototype protocol:</b></dt>
 <dd><a href="protocol.txt">protocol.txt</a>
     </dd>
 
+<dt><b>Prototype protocol implementation source code:</b></dt>
+<dd><a href="https://github.com/mbtaylor/tlsamp"
+       >https://github.com/mbtaylor/tlsamp</a>
+    </dd>
+
 </dl>
+
+<hr />
+<h2>Try it out</h2>
+
+<h3>1. Try the examples above</h3>
+
+<p>These are example web applications based on the experimental TLS profile
+deployed on my HTTP/HTTPS servers.
+</p>
+<ol>
+<li>Start the HTTPS-capable hub linked above (download and run the jar file);
+    make sure you don't have any other hub running first</li>
+<li>Start some other SAMP-capable applications (e.g. TOPCAT)</li>
+<li>Point your browser at the HTTP examples and HTTPS examples links above.
+    Try the example web apps in both HTTP and HTTPS versions.
+    Do they work?</li>
+</ol>
+
+<h3>2. Deploy the examples servlet on your HTTPS site</h3>
+
+<p>For this you need to have a running servlet container (e.g. Tomcat)
+running from HTTPS (i.e. with a certificate).
+That's necessary because the TLS profile requires you to run a
+separate server component alongside the web application itself,
+in order to relay SAMP calls from the web app to the hub.
+It is possible to do that using a relay deployed on a different machine
+or using a standalone HTTPS server rather than a servlet container,
+but here I just document doing it from within the same servlet.
+</p>
+
+<ol>
+<li>Deploy the .war file listed above into your servlet container
+    (fiddle with the web.xml file as required)</li>
+<li>Try out the examples as in the previous exercise,
+    but this time pointing at the deployment on your HTTPS server.</li>
+</ol>
+
+<h3>3. Write your own HTTPS-capable web clients</h3>
+
+<ol>
+<li>Take the content of the .war file, but add some example web
+    applications of your own (.html files with suitable javascript).
+    If you have one that already uses <code>samp.js</code>,
+    you can just replace that with the tlsamp.js file above,
+    and modify the connector setup like this:
+    <pre>
+      var connector = new samp.Connector(clientName, metaData);
+
+      // This is the part that's required for use with HTTPS.
+      // You need to set the connector profile property to an instance of
+      // samp.TlsProfile, pointing to a hub relay XML-RPC server.
+      // The value of relay here is the URL of the Relay servlet as
+      // set up in the provided war file; adjust it if the relay has
+      // a different URL.
+      if (location.protocol === "https:") {
+          var relay = baseUrl + "xmlrpc";
+          connector.profile = new samp.TlsProfile(relay);
+      }
+    </pre>
+    </li>
+<li>Deploy it as before; the relay component has to be running.</li>
+<li>Point your browser at it and see if the SAMP functionality works.</li>
+</ol>
+
+<hr />
+<address>
+Mark Taylor --
+<a href='mailto:m.b.taylor@bris.ac.uk'>m.b.taylor@bris.ac.uk</a>
+<br />
+Git version: @gitversion@
+</address>
+
 </body>
 </html>
