@@ -1116,7 +1116,10 @@ var samp = (function() {
         var sendFunc = function(xhr, request, tag) {
             var methodName =
                 request.methodName.replace(WEBSAMP_PREFIX, TLSAMP_PREFIX );
-            var params = Array.concat(tag, request.params);
+            var params = [tag];
+            for(var i = 0; i < request.params.length; i++) {
+                params.push(request.params[i]);
+            }
             var tlsReq = new XmlRpcRequest(methodName, params)
             return function() {
                 xhr.send(tlsReq.toXml());
@@ -1385,6 +1388,7 @@ var samp = (function() {
     // running, false if not.
     // Returns the interval timer (can be passed to clearInterval()).
     Connector.prototype.onHubAvailability = function(availHandler, millis) {
+        var connector = this;
         var profile = connector.profile;
         samp.ping(availHandler, profile);
 
