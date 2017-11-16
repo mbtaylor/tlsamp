@@ -1,0 +1,23 @@
+Implementation feedback from ESAC/GACS:
+--------------------------------------
+
+See https://issues.cosmos.esa.int/gaia/browse/C9VALBT-2.
+
+An error "Hostname mismatch: 127.0.0.1 != 0:0:0:0:0:0:0:1" was
+being generated (this was with a self-signed certificate,
+presumably hub, server and probably relay on the same machine).
+The problem is that the javascript code in the web application
+is coming up with a different hostname than the java code
+in the hub.
+
+Fixed it in this case by running the hub with
+-Djava.net.preferIPv6Addresses=true.
+
+That could be a problem though, given that people may not run
+with that option by default (and you don't know what flavour the
+browser is going to use anyway).  I can add a special case for
+the loopback address ("127.0.0.1" matches "::1").  Otherwise,
+I could try to make sure I get the host name rather than
+numeric address; I know how to do that in Java, not sure about
+JS, but in any case it may not have a name.
+
