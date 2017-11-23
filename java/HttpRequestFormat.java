@@ -7,7 +7,7 @@ package org.astrogrid.samp.tls;
  * from them.
  *
  * <p>The request object is the final parameter passed to the
- * {@link org.astrogrid.samp.xmlrpc.SampXmlRpcHandler#handleCall handleCall
+ * {@link org.astrogrid.samp.xmlrpc.SampXmlRpcHandler#handleCall handleCall}
  * method; its nature depends on the XmlRpc implementation within
  * which this relay is being harnessed.
  *
