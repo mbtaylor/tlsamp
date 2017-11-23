@@ -29,16 +29,16 @@ RESOURCES = \
 JSAMP_JAR = jsamp.jar
 SERVLET_JAR = servlet.jar
 
-# Need java 7+ to contain the right QuoVadis certificate for use with
+# Need java 8+ to contain the right QuoVadis certificate for use with
 # andromeda.star.bristol.ac.uk certificate
-JAVA = java7
+JAVA = java8
 
 JARFILE = tlsamp.jar
 TLSHUB = tlshub.jar
 WEBAPP = tlsamp
 GITVERSION = "`gitversion`"
 
-# Keystore and password for use witt the standalone server.
+# Keystore and password for use with the standalone server.
 # If you're not going to use it (you're using the servlet instead)
 # these don't need to be present.
 KEYSTORE = /usr/share/tomcat/conf/keystore.jks
@@ -48,7 +48,7 @@ JFLAGS =
 
 HTTP_DIR = /mbt/user/www/htdocs/websamp
  
-build: $(JARFILE) $(JSAMP_JAR) $(TLSHUB) $(WEBAPP).war
+build: $(JARFILE) $(JSAMP_JAR) $(TLSHUB) $(WEBAPP).war javadocs
 
 # This runs a standalone document server and Relay on the local machine.
 # Useful for testing (you can try out TLS SAMP without a servlet container)
@@ -75,7 +75,7 @@ topcat:
 	$(JAVA) -jar /mbt/starjava/lib/topcat/topcat.jar
 
 clean:
-	rm -rf $(JARFILE) $(TLSHUB) $(WEBAPP).war tmp
+	rm -rf $(JARFILE) $(TLSHUB) $(WEBAPP).war tmp javadocs
 
 $(JARFILE): $(JSAMP_JAR) $(JSRC) $(RESOURCES) $(SERVLET_JAR)
 	rm -rf tmp
@@ -112,6 +112,13 @@ $(WEBAPP).war: $(JARFILE) $(JSAMP_JAR) $(TLSHUB)
 	cp $(RESOURCES) $(TLSHUB) tmp/
 	cd tmp && jar cf ../$@ .
 	rm -rf tmp
+
+javadocs: $(JSRC)
+	rm -rf $@
+	mkdir $@
+	javadoc -quiet -d $@ \
+                -classpath $(JARFILE):$(JSAMP_JAR):$(SERVLET_JAR) \
+                $(JSRC)
 
 deploy: deploy_http deploy_https
 
