@@ -23,9 +23,12 @@ import org.w3c.dom.Document;
 
 /**
  * Servlet harness for the TLS hub relay functionality.
+ * By default, CORS is implemented.
  *
  * @author   Mark Taylor
  * @since    11 Mar 2016
+ * @see   <a href="http://www.w3.org/TR/cors/"
+ *           >Cross-Origin Resource Sharing W3C Standard</a>
  */
 public class RelayServlet extends HttpServlet {
 
@@ -34,17 +37,31 @@ public class RelayServlet extends HttpServlet {
     private SampXmlRpcHandler receiveHandler_;
     private SampXmlRpcHandler dispenseHandler_;
     private DocumentBuilderFactory dbFact_;
+
     private final boolean checkHostnames_;
+    private final boolean useCors_;
+
     private static final String RELAY_ATTNAME =
         XmlRpcRelay.class.getName();
     private static final String DBFACT_ATTNAME =
         RelayServlet.class.getName() + ".dbfact";
+
+    private static final String ORIGIN_KEY = "Origin";
+    private static final String ALLOW_ORIGIN_KEY =
+        "Access-Control-Allow-Origin";
+    private static final String REQUEST_METHOD_KEY =
+        "Access-Control-Request-Method";
+    private static final String ALLOW_METHOD_KEY =
+        "Access-Control-Allow-Methods";
+    private static final String ALLOW_HEADERS_KEY =
+        "Access-Control-Allow-Headers";
 
     /**
      * Constructor.
      */
     public RelayServlet() {
         checkHostnames_ = true;
+        useCors_ = true;
     }
 
     @Override
@@ -102,9 +119,45 @@ public class RelayServlet extends HttpServlet {
         resp.setStatus( HttpServletResponse.SC_OK );
         resp.setContentLength( outBytes.length );
         resp.setContentType( "text/xml" );
+        String origin = req.getHeader( ORIGIN_KEY );
+        if ( origin != null && isAuthorizedCorsOrigin( origin ) ) {
+            resp.setHeader( ALLOW_ORIGIN_KEY, origin );
+        }
         OutputStream out = resp.getOutputStream();
         out.write( outBytes );
         out.flush();
+    }
+
+    @Override
+    protected void doOptions( HttpServletRequest req, HttpServletResponse resp )
+            throws IOException {
+        String origin = req.getHeader( ORIGIN_KEY );
+        String reqMethod = req.getHeader( REQUEST_METHOD_KEY );
+
+        // Serve CORS preflight request.
+        resp.setStatus( HttpServletResponse.SC_OK );
+        resp.setContentLength( 0 );
+        if ( origin != null && isAuthorizedCorsOrigin( origin ) &&
+             reqMethod != null ) {
+            resp.setHeader( ALLOW_ORIGIN_KEY, origin );
+            resp.setHeader( ALLOW_METHOD_KEY, reqMethod );
+            resp.setHeader( ALLOW_HEADERS_KEY, "Content-Type" );
+        }
+    }
+
+    /**
+     * Indicates whether requests from a given Origin are to be
+     * authorised for use of this relay.
+     *
+     * <p>The default implementation returns true for all origins
+     * if CORS is in use.
+     *
+     * @param  origin  origin of request
+     * @return  true iff cross-origin requests from origin are to be enabled
+     *               using CORS
+     */
+    protected boolean isAuthorizedCorsOrigin( String origin ) {
+        return useCors_;
     }
 
     /**
