@@ -12,6 +12,7 @@ JSRC = \
        java/HttpRequestFormat.java \
        java/RelayServlet.java \
        java/StandaloneServer.java \
+       java/TlsTopcat.java \
 
 RESOURCES = \
        protocol.txt \
@@ -28,6 +29,7 @@ RESOURCES = \
 
 JSAMP_JAR = jsamp.jar
 SERVLET_JAR = servlet.jar
+TOPCAT_JAR = topcat-full_tlsamp.jar
 
 # Need java 8+ to contain the right QuoVadis certificate for use with
 # andromeda.star.bristol.ac.uk certificate
@@ -48,7 +50,7 @@ JFLAGS =
 
 HTTP_DIR = /mbt/user/www/htdocs/websamp
  
-build: $(JARFILE) $(JSAMP_JAR) $(TLSHUB) $(WEBAPP).war javadocs
+build: $(JARFILE) $(JSAMP_JAR) $(TLSHUB) $(TOPCAT_JAR) $(WEBAPP).war javadocs
 
 # This runs a standalone document server and Relay on the local machine.
 # Useful for testing (you can try out TLS SAMP without a servlet container)
@@ -71,11 +73,11 @@ hub: build
                 org.astrogrid.samp.JSamp hub -verbose \
                 -profiles std,web,org.astrogrid.samp.tls.TlsHubProfile
 
-topcat:
-	$(JAVA) -jar /mbt/starjava/lib/topcat/topcat.jar
+topcat: $(TOPCAT_JAR)
+	$(JAVA) -jar $(TOPCAT_JAR)
 
 clean:
-	rm -rf $(JARFILE) $(TLSHUB) $(WEBAPP).war tmp javadocs
+	rm -rf $(JARFILE) $(TLSHUB) $(TOPCAT_JAR) $(WEBAPP).war tmp javadocs
 
 $(JARFILE): $(JSAMP_JAR) $(JSRC) $(RESOURCES) $(SERVLET_JAR)
 	rm -rf tmp
@@ -111,6 +113,20 @@ $(WEBAPP).war: $(JARFILE) $(JSAMP_JAR) $(TLSHUB)
 	cp web.xml tmp/WEB-INF
 	cp $(RESOURCES) $(TLSHUB) tmp/
 	cd tmp && jar cf ../$@ .
+	rm -rf tmp
+
+$(TOPCAT_JAR): $(TLSHUB)
+	rm -rf tmp
+	mkdir -p tmp/c
+	cd tmp/c \
+        && curl -sL http://www.starlink.ac.uk/topcat/topcat-full.jar | jar x \
+           && rm -rf META-INF \
+           && jar xf ../../$(JSAMP_JAR) org \
+           && jar xf ../../$(TLSHUB) org \
+	   && echo "`cat uk/ac/starlink/topcat/revision-string` + TLSAMP HUB" \
+                   >uk/ac/starlink/topcat/revision-string
+	echo "Main-Class: org.astrogrid.samp.tls.TlsTopcat" > tmp/manifest
+	cd tmp/c && jar cmf ../manifest ../../$@ *
 	rm -rf tmp
 
 javadocs: $(JSRC)
