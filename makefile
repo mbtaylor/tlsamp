@@ -126,6 +126,8 @@ $(TOPCAT_JAR): $(TLSHUB)
 	   && echo "`cat uk/ac/starlink/topcat/revision-string` + TLSAMP HUB" \
                    >uk/ac/starlink/topcat/revision-string
 	echo "Main-Class: org.astrogrid.samp.tls.TlsTopcat" > tmp/manifest
+	echo "Permissions: all-permissions" >> tmp/manifest
+	echo "Application-Name: TOPCAT" >> tmp/manifest
 	cd tmp/c && jar cmf ../manifest ../../$@ *
 	rm -rf tmp
 
