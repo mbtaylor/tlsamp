@@ -27,7 +27,8 @@ RESOURCES = \
        resources/clientIcon.gif \
        resources/messier.xml \
 
-SAMPLOAD_FILES = sampload.html sampload.png browser-popup.png
+SAMPLOAD_FILES = sampload.html sampload.png browser-popup.png \
+                 sampload sampload.jar
 
 JSAMP_JAR = jsamp.jar
 SERVLET_JAR = servlet.jar
@@ -163,15 +164,14 @@ deploy_https: $(WEBAPP).war $(RESOURCES)
 	cp $(WEBAPP).war /usr/share/tomcat/webapps/
 	/etc/init.d/tomcat start
 
-deploy_http: $(RESOURCES) $(TLSHUB) $(WEBAPP).war deploy.html deploy_sampload
-	rm -rf $(HTTP_DIR)/examples
-	mkdir $(HTTP_DIR)/examples
+deploy_http: $(RESOURCES) $(TLSHUB) $(WEBAPP).war tlshub.jnlp \
+             deploy.html $(SAMPLOAD_FILES)
+	rm -rf $(HTTP_DIR)
+	mkdir -p $(HTTP_DIR)/examples
 	cp $(RESOURCES) $(HTTP_DIR)/examples/
-	cp $(WEBAPP).war $(TLSHUB) protocol.txt $(HTTP_DIR)/
+	cp $(WEBAPP).war $(TLSHUB) protocol.txt tlshub.jnlp $(HTTP_DIR)/
 	sed -es/@gitversion@/$(GITVERSION)/g \
             < deploy.html > $(HTTP_DIR)/index.html
-
-deploy_sampload: $(SAMPLOAD_FILES)
 	cp $(SAMPLOAD_FILES) $(HTTP_DIR)
 	sed -es/@gitversion@/$(GITVERSION)/g \
             < sampload.html > $(HTTP_DIR)/sampload.html

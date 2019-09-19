@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<jnlp spec="1.0+" codebase="http://andromeda.star.bristol.ac.uk/websamp"
+                  href="tlshub.jnlp">
+  <information>
+    <title>TLS Profile SAMP Hub</title>
+    <vendor>Mark Taylor, Bristol University, UK</vendor>
+    <homepage href="http://andromeda.star.bristol.ac.uk/websamp/"/>
+    <description kind="one-line"
+                 >"SAMP Hub running prototype TLS Profile"</description>
+    <offline-allowed/>
+  </information>
+  <security>
+    <all-permissions/>
+  </security>
+  <resources>
+    <j2se version="1.7+"/>
+    <jar href="tlshub.jar"/>
+  </resources>
+  <application-desc main-class="org.astrogrid.samp.tls.TlsHub">
+    <!-- <argument>-memory</argument> -->
+  </application-desc>
+</jnlp>
+
