@@ -43,9 +43,10 @@ GITVERSION = "`gitversion`"
 # Keystore and password for use with the standalone server.
 # If you're not going to use it (you're using the servlet instead)
 # these don't need to be present.
-KEYSTORE = /usr/share/tomcat/conf/keystore.jks
+KEYSTORE = /usr/share/tomcat/conf/andromeda2.jks
 KEYPASS = `cat /usr/share/tomcat/conf/keypass.txt`
 
+JAVAC = javac -source 1.6 -target 1.6
 JFLAGS =
 
 HTTP_DIR = /mbt/user/www/htdocs/websamp
@@ -84,7 +85,7 @@ $(JARFILE): $(JSAMP_JAR) $(JSRC) $(RESOURCES) $(SERVLET_JAR)
 	mkdir tmp
 	mkdir -p tmp/resources
 	for f in $(RESOURCES); do cp $$f tmp/resources/; done
-	javac $(JFLAGS) -classpath $(JSAMP_JAR):$(SERVLET_JAR) \
+	$(JAVAC) $(JFLAGS) -classpath $(JSAMP_JAR):$(SERVLET_JAR) \
               -d tmp $(JSRC)
 	cd tmp && jar cf ../$@ . 
 	rm -rf tmp
@@ -99,7 +100,7 @@ $(TLSHUB): $(JARFILE) $(JSAMP_JAR)
 	rm -rf tmp
 
 $(JSAMP_JAR):
-	cp /mbt/github/jsamp/target/jsamp-1.3.5+.jar $@
+	cp /mbt/github/jsamp/target/jsamp-1.3.6.jar $@
 
 $(SERVLET_JAR):
 	cp /mbt/starjava/source/jetty/src/lib/javax.servlet.jar $@
