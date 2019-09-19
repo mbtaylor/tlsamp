@@ -27,6 +27,8 @@ RESOURCES = \
        resources/clientIcon.gif \
        resources/messier.xml \
 
+SAMPLOAD_FILES = sampload.html sampload.png browser-popup.png
+
 JSAMP_JAR = jsamp.jar
 SERVLET_JAR = servlet.jar
 TOPCAT_JAR = topcat-full_tlsamp.jar
@@ -79,6 +81,7 @@ topcat: $(TOPCAT_JAR)
 
 clean:
 	rm -rf $(JARFILE) $(TLSHUB) $(TOPCAT_JAR) $(WEBAPP).war tmp javadocs
+	rm -rf sampload sampload.jar
 
 $(JARFILE): $(JSAMP_JAR) $(JSRC) $(RESOURCES) $(SERVLET_JAR)
 	rm -rf tmp
@@ -132,6 +135,18 @@ $(TOPCAT_JAR): $(TLSHUB)
 	cd tmp/c && jar cmf ../manifest ../../$@ *
 	rm -rf tmp
 
+sampload.jar: $(JSAMP_JAR)
+	rm -rf tmp
+	mkdir tmp
+	cd tmp \
+           && jar xf ../$(JSAMP_JAR) \
+           && jar cfe ../$@ org.astrogrid.samp.util.SampLoad org
+	rm -rf tmp
+
+sampload: jarself.sh sampload.jar
+	cat jarself.sh sampload.jar >$@ 
+	chmod +x $@
+
 javadocs: $(JSRC)
 	rm -rf $@
 	mkdir $@
@@ -148,12 +163,17 @@ deploy_https: $(WEBAPP).war $(RESOURCES)
 	cp $(WEBAPP).war /usr/share/tomcat/webapps/
 	/etc/init.d/tomcat start
 
-deploy_http: $(RESOURCES) $(TLSHUB) $(WEBAPP).war deploy.html
+deploy_http: $(RESOURCES) $(TLSHUB) $(WEBAPP).war deploy.html deploy_sampload
 	rm -rf $(HTTP_DIR)/examples
 	mkdir $(HTTP_DIR)/examples
 	cp $(RESOURCES) $(HTTP_DIR)/examples/
 	cp $(WEBAPP).war $(TLSHUB) protocol.txt $(HTTP_DIR)/
 	sed -es/@gitversion@/$(GITVERSION)/g \
             < deploy.html > $(HTTP_DIR)/index.html
+
+deploy_sampload: $(SAMPLOAD_FILES)
+	cp $(SAMPLOAD_FILES) $(HTTP_DIR)
+	sed -es/@gitversion@/$(GITVERSION)/g \
+            < sampload.html > $(HTTP_DIR)/sampload.html
 
 

@@ -1,0 +1,89 @@
+<html>
+<head>
+<title>Sampload helper application</title>
+</head>
+<body>
+
+<h1>Sampload helper application</h1>
+
+<p>Sampload is a simple application that looks at the file (or URL)
+given in its command-line argument and sends it as a table or FITS image
+over SAMP to any suitable applications currently running.
+It is mainly intended as a helper application for use with web browsers,
+so you can use it as a viewer for VOTables, FITS image files, or CDF tables
+that appear in a web page.  This can be used as a poor man's replacement
+for a SAMP-capable web page (which could register as a SAMP client
+and talk to the SAMP hub itself), but unlike Web SAMP, it will work
+with HTTPS pages as well as HTTP.
+</p>
+
+<p>Here are some files you might want to load into a SAMP client:
+</p>
+<ul>
+<li><a href="../data/m46-2mass.vot"
+                    >m46-2mass.vot</a> (VOTable)</li>
+<li><a href="../data/plei_image.fits"
+                    >plei_image.fits</a> (FITS image)</li>
+<li><a href="../data/ac_h0s_mfi_20070323000005_20070323235949.cdf"
+                    >ac_h0s_mfi_20070323000005_20070323235949.cdf</a>
+                    (CDF table)</li>
+</ul>
+<p>If you click on one of them, your browser might ask you what to do with it:
+</p>
+<div align='center'>
+<img src="browser-popup.png" alt="Browser file download action popup window">
+</div>
+<p>If you choose the <strong>sampload</strong> helper application as above,
+you should then see something like:
+</p>
+<div align='center'>
+<img src="sampload.png" alt="SampLoad GUI popup window">
+</div>
+<p>Hit the <strong>Send</strong> button, and the file should get sent
+to the displayed SAMP application.
+<strong><em>Note: a hub and a suitable SAMP
+client have to be running for this to work.</em></strong>
+If e.g. TOPCAT (which contains its own hub) is running, this ought to work
+for downloading tables.
+</p>
+
+<p>It works equally over HTTP or HTTPS, but it's only good for
+file load type actions, it can't mimic the various other options
+like bidirectional communication or finer control that a SAMP client
+running in the web page could achieve.
+</p>
+
+
+<p>You can install it by downloading one of these files
+(easist listed first):
+</p>
+<ul>
+<li><a href="sampload"><code>sampload</code></a>:
+    self-contained shell script, just do "<code>chmod +x sampload</code>",
+    tested on linux and OSX
+    </li>
+<li><a href="sampload.jar"><code>sampload.jar</code></a>:
+    jar file, run using script like
+    "<code>java -jar /path/to/sampload.jar $@</code>"
+    </li>
+<li><a href="http:/www.star.bristol.ac.uk/~mbt/jsamp/jsamp-1.3.6.jar"
+                                                    >jsamp-1.3.6.jar</a>:
+    JSAMP 1.3.6 library jar file, run using script like
+    "<code>java -jar jsamp-1.3.6.jar sampload $@</code>"
+    </li>
+</ul>
+<p>(in the above, <code>$@</code> is shell syntax for the arguments
+presented to the script; in e.g. Windows you probably need to do
+something else)
+</p>
+
+<hr />
+<address>
+Mark Taylor --
+<a href='mailto:m.b.taylor@bristol.ac.uk'>m.b.taylor@bristol.ac.uk</a>
+<br />
+Git version: @gitversion@
+</address>
+
+</body>
+</html>
