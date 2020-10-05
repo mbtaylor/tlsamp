@@ -117,6 +117,7 @@ $(WEBAPP).war: $(JARFILE) $(JSAMP_JAR) $(TLSHUB)
 	cp $(JARFILE) $(JSAMP_JAR) tmp/WEB-INF/lib
 	cp web.xml tmp/WEB-INF
 	cp $(RESOURCES) $(TLSHUB) tmp/
+	cp -r /mbt/user/www/htdocs/sampjs/ tmp/
 	cd tmp && jar cf ../$@ .
 	rm -rf tmp
 
